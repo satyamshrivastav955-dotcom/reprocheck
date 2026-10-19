@@ -3,16 +3,16 @@
 UV ?= uv
 
 test: lint typecheck format-check
-	$(UV) run --locked python -m pytest
+	$(UV) run --locked --offline python -m pytest
 
 lint:
-	$(UV) run --locked ruff check src tests
+	$(UV) run --locked --offline ruff check src tests
 
 typecheck:
-	$(UV) run --locked mypy src
+	$(UV) run --locked --offline mypy src
 
 format-check:
-	$(UV) run --locked ruff format --check src tests
+	$(UV) run --locked --offline ruff format --check src tests
 
 build:
 	$(UV) build
