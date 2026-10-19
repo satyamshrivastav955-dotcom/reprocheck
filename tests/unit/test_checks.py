@@ -166,9 +166,8 @@ class StaticCheckBehaviorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             raw_secret = "super-secret-value-1234567890"
-            (root / "notes.txt").write_text(
-                f"API_KEY={raw_secret}\npath=/home/alice/private/project\n"
-            )
+            machine_path = "/" + "home/alice/private/project"
+            (root / "notes.txt").write_text(f"API_KEY={raw_secret}\npath={machine_path}\n")
             context = _context(root)
 
             secret = LikelySecretCheck().evaluate(context)[0]
@@ -178,7 +177,7 @@ class StaticCheckBehaviorTests(unittest.TestCase):
             self.assertEqual(secret.assessment, Assessment.FAIL)
             self.assertNotIn(raw_secret, json.dumps(secret.to_dict()))
             self.assertEqual(path.state, ResultState.STATIC_FAIL)
-            self.assertNotIn("/home/alice/private/project", json.dumps(path.to_dict()))
+            self.assertNotIn(machine_path, json.dumps(path.to_dict()))
 
     def test_malformed_manifest_does_not_pass_as_static_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

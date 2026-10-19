@@ -15,7 +15,7 @@ guessing their behavior. The clean-room profiles are:
 
 - `python-uv`: `uv sync --locked`, followed by the discovered Python test path.
 - `python-pip-editable`: an explicit, opt-in host-oriented fallback.
-- `node-npm`: `npm ci`, followed by declared `npm test` and/or `npm run build` scripts.
+- `node-npm`: `npm ci`, followed by declared package test/build scripts.
 
 Docker is the default verification backend. If Docker is unavailable, verification
 is recorded as blocked; ReproCheck does not silently fall back to host execution.

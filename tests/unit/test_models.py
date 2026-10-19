@@ -111,7 +111,7 @@ class FindingFingerprintTests(unittest.TestCase):
 
 class ContractShapeTests(unittest.TestCase):
     def test_report_and_receipt_have_versioned_shapes(self) -> None:
-        repository = RepositoryIdentity(root="/workspace/project", revision="abc123")
+        repository = RepositoryIdentity(root="fixture-project", revision="abc123")
         content = ContentFingerprint(algorithm="sha256", digest="deadbeef", file_count=3)
         receipt = EvidenceReceipt(
             receipt_id="receipt-1",

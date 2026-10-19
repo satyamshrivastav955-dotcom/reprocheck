@@ -68,7 +68,7 @@ def _report() -> Report:
         remediation="none needed",
     )
     return Report(
-        repository=RepositoryIdentity(root="/workspace/project"),
+        repository=RepositoryIdentity(root="fixture-project"),
         findings=(first, second),
         state=ResultState.NOT_VERIFIED,
         assessment=Assessment.UNKNOWN,

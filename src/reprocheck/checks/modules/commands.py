@@ -46,7 +46,7 @@ _TEST_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bgo\s+test\b", "go"),
     (r"\bdotnet\s+test\b", "dotnet"),
     (r"\b(?:mvn|gradle)\s+test\b", "java"),
-    (r"\bmake\s+test\b", "make"),
+    (r"\bmake\s+test\b", "script"),
 )
 _BUILD_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\b(?:python\s+-m\s+build|uv\s+build)\b", "python"),
@@ -55,7 +55,7 @@ _BUILD_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bgo\s+build\b", "go"),
     (r"\bdotnet\s+build\b", "dotnet"),
     (r"\b(?:mvn\s+package|gradle\s+build)\b", "java"),
-    (r"\bmake\s+build\b", "make"),
+    (r"\bmake\s+build\b", "script"),
     (r"\bdocker\s+build\b", "container"),
 )
 
@@ -194,6 +194,7 @@ def command_observations(
             for repo_file in context.discovery.files
             if PurePosixPath(repo_file.path).name.lower()
             in {"readme", "readme.md", "readme.rst", "readme.txt"}
+            and len(PurePosixPath(repo_file.path).parts) == 1
             and not repo_file.is_symlink
         ),
         key=lambda repo_file: repo_file.path,

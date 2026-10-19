@@ -606,7 +606,7 @@ def plan_repository_commands(
             continue
         path = repo_file.path
         basename = PurePosixPath(path).name.lower()
-        if basename in _README_NAMES:
+        if basename in _README_NAMES and len(PurePosixPath(path).parts) == 1:
             result = read_known_text(context, path)
             if result.status == "ok":
                 candidates.extend(_readme_candidates(result.text, source=path))
