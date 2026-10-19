@@ -213,9 +213,23 @@ def _recognized_spec(tokens: tuple[str, ...], *, source: str) -> tuple[str, Comm
             return "build", _spec(tokens[0], args, description=description)
         return None
     if executable == "uv":
-        if len(args) >= 2 and args[0] == "run" and args[1].lower() in {"pytest", "tox", "nox"}:
-            return "test", _spec(tokens[0], args, description=description)
-        if args and args[0].lower() == "build":
+        normalized = list(args)
+        while normalized and normalized[0] in {"--locked", "--frozen"}:
+            normalized.pop(0)
+        if normalized and normalized[0].lower() == "run":
+            normalized.pop(0)
+            while normalized and normalized[0].startswith("-"):
+                normalized.pop(0)
+            if normalized and normalized[0].lower() in {"pytest", "tox", "nox"}:
+                return "test", _spec(tokens[0], args, description=description)
+            if (
+                len(normalized) >= 3
+                and normalized[0].lower() in {"python", "python3"}
+                and normalized[1] == "-m"
+                and normalized[2].lower() in {"pytest", "tox", "nox"}
+            ):
+                return "test", _spec(tokens[0], args, description=description)
+        if normalized and normalized[0].lower() == "build":
             return "build", _spec(tokens[0], args, description=description)
         return None
     if executable in {"pytest", "tox", "nox"}:

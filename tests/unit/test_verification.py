@@ -207,6 +207,61 @@ class WorkspaceAndExecutorTests(unittest.TestCase):
             )
             self.assertEqual(infrastructure_error.status, ExecutionStatus.INFRA_ERROR)
 
+    def test_output_is_bounded_and_workspace_cwd_cannot_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            noisy = execute_plan(
+                self._command_plan(
+                    root,
+                    "-c",
+                    "print('x' * 100000)",
+                ),
+                approved=True,
+                allow_host_exec=True,
+                max_output_bytes=128,
+            )
+            self.assertEqual(noisy.status, ExecutionStatus.PASS)
+            self.assertLessEqual(len(noisy.commands[0].stdout), 128)
+
+            traversal_plan = VerificationPlan(
+                repository=root,
+                profile="traversal",
+                ecosystem=Ecosystem.PYTHON,
+                commands=(
+                    PlannedCommand(
+                        command=CommandSpec(
+                            executable=sys.executable,
+                            args=("-c", "print('must not run')"),
+                            cwd="../",
+                        ),
+                        phase=PlanPhase.VERIFICATION,
+                        network_required=False,
+                        purpose="Run a test command",
+                    ),
+                ),
+                acquisition=AcquisitionPolicy(network_required=False),
+            )
+            escaped = execute_plan(
+                traversal_plan,
+                approved=True,
+                allow_host_exec=True,
+            )
+            self.assertEqual(escaped.status, ExecutionStatus.INFRA_ERROR)
+            self.assertEqual(escaped.commands[0].exit_code, None)
+
+    def test_docker_unavailability_is_blocked_without_host_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._command_plan(root, "-c", "print('must not run')")
+            blocked = execute_plan(
+                plan,
+                approved=True,
+                backend="docker",
+                docker_executable="reprocheck-docker-not-installed",
+            )
+            self.assertEqual(blocked.status, ExecutionStatus.BLOCKED)
+            self.assertEqual(blocked.commands, ())
+
 
 if __name__ == "__main__":
     unittest.main()
