@@ -27,6 +27,13 @@ IGNORED_DIRECTORY_NAMES: Final[frozenset[str]] = frozenset(
         "build",
         ".pytest_cache",
         "coverage",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".hypothesis",
+        ".tox",
+        ".nox",
+        ".pytype",
+        "htmlcov",
     }
 )
 
