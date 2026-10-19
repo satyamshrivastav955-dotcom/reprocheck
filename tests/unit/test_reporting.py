@@ -1,5 +1,6 @@
 import json
 import unittest
+from dataclasses import replace
 
 from reprocheck.models import (
     Assessment,
@@ -125,6 +126,19 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("**Evidence source:** z.txt", output)
         self.assertIn("**Remediation:** fix z", output)
         self.assertIn("## Limitations", output)
+
+    def test_verification_metadata_is_visible_in_human_reports(self) -> None:
+        report = replace(
+            _report(),
+            summary={"verification_status": "pass", "receipt_id": "receipt-demo"},
+        )
+
+        terminal = render_terminal(report)
+        markdown = render_markdown(report)
+
+        self.assertIn("verification: pass", terminal)
+        self.assertIn("receipt: receipt-demo", terminal)
+        self.assertIn("**Receipt:** `receipt-demo`", markdown)
 
 
 if __name__ == "__main__":

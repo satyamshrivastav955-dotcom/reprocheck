@@ -77,11 +77,14 @@ def render_markdown(
         f"- **Repository:** `{_md(report.repository.root)}`",
         f"- **State:** `{_md(report.state.value)}`",
         f"- **Assessment:** `{_md(report.assessment.value)}`",
-        "",
-        *_render_score(score),
-        "## Findings",
-        "",
     ]
+    verification_status = report.summary.get("verification_status")
+    receipt_id = report.summary.get("receipt_id")
+    if isinstance(verification_status, str):
+        lines.append(f"- **Verification:** `{_md(verification_status)}`")
+    if isinstance(receipt_id, str):
+        lines.append(f"- **Receipt:** `{_md(receipt_id)}`")
+    lines.extend(["", *_render_score(score), "## Findings", ""])
     findings = sorted_findings(report.findings)
     if findings:
         for finding in findings:

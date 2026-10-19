@@ -72,11 +72,14 @@ def render_terminal(
         f"state: {report.state.value}",
         f"assessment: {report.assessment.value}",
         f"findings: {len(report.findings)}",
-        "",
-        *_render_score(score),
-        "",
-        "FINDINGS",
     ]
+    verification_status = report.summary.get("verification_status")
+    receipt_id = report.summary.get("receipt_id")
+    if isinstance(verification_status, str):
+        lines.append(f"verification: {verification_status}")
+    if isinstance(receipt_id, str):
+        lines.append(f"receipt: {receipt_id}")
+    lines.extend(["", *_render_score(score), "", "FINDINGS"])
     findings = sorted_findings(report.findings)
     if findings:
         for finding in findings:
