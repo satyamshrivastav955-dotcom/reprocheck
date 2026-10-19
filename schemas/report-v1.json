@@ -1,0 +1,413 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reprocheck.dev/schemas/report-v1.json",
+  "title": "ReproCheck report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "repository",
+    "findings",
+    "state",
+    "assessment",
+    "checks",
+    "discovery",
+    "verification_runs",
+    "evidence_receipt",
+    "generated_at",
+    "summary",
+    "schema_version"
+  ],
+  "properties": {
+    "repository": { "$ref": "#/$defs/repositoryIdentity" },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "state": { "$ref": "#/$defs/resultState" },
+    "assessment": { "$ref": "#/$defs/assessment" },
+    "checks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/checkSpec" }
+    },
+    "discovery": {
+      "anyOf": [
+        { "$ref": "#/$defs/discoverySummary" },
+        { "type": "null" }
+      ]
+    },
+    "verification_runs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/verificationRun" }
+    },
+    "evidence_receipt": {
+      "anyOf": [
+        { "$ref": "#/$defs/evidenceReceipt" },
+        { "type": "null" }
+      ]
+    },
+    "generated_at": { "type": ["string", "null"] },
+    "summary": { "$ref": "#/$defs/jsonObject" },
+    "schema_version": { "const": "report-v1" }
+  },
+  "$defs": {
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "resultState": {
+      "type": "string",
+      "enum": [
+        "present",
+        "looks_correct",
+        "static_fail",
+        "verified_pass",
+        "verified_fail",
+        "not_verified"
+      ]
+    },
+    "assessment": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "warn",
+        "info",
+        "unknown",
+        "not_applicable",
+        "unsupported",
+        "blocked",
+        "error"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["info", "low", "medium", "high", "critical"]
+    },
+    "ecosystem": {
+      "type": "string",
+      "enum": [
+        "python",
+        "node",
+        "go",
+        "rust",
+        "java",
+        "dotnet",
+        "ruby",
+        "php",
+        "elixir",
+        "container",
+        "unknown"
+      ]
+    },
+    "checkCategory": {
+      "type": "string",
+      "enum": [
+        "repository",
+        "runtime",
+        "toolchain",
+        "dependencies",
+        "tests",
+        "build",
+        "container",
+        "integrity",
+        "documentation"
+      ]
+    },
+    "verificationClass": {
+      "type": "string",
+      "enum": ["static", "command", "test", "build", "environment", "integrity"]
+    },
+    "repositoryIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "repository_id", "revision", "branch", "remote_url", "is_dirty"],
+      "properties": {
+        "root": { "type": "string" },
+        "repository_id": { "type": ["string", "null"] },
+        "revision": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] },
+        "remote_url": { "type": ["string", "null"] },
+        "is_dirty": { "type": ["boolean", "null"] }
+      }
+    },
+    "commandSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable", "args", "cwd", "env", "timeout_seconds", "description"],
+      "properties": {
+        "executable": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "cwd": { "type": ["string", "null"] },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "timeout_seconds": { "type": ["number", "null"] },
+        "description": { "type": ["string", "null"] }
+      }
+    },
+    "commandExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "result_state",
+        "exit_code",
+        "stdout",
+        "stderr",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "timed_out"
+      ],
+      "properties": {
+        "command": { "$ref": "#/$defs/commandSpec" },
+        "result_state": { "$ref": "#/$defs/resultState" },
+        "exit_code": { "type": ["integer", "null"] },
+        "stdout": { "type": "string" },
+        "stderr": { "type": "string" },
+        "started_at": { "type": ["string", "null"] },
+        "finished_at": { "type": ["string", "null"] },
+        "duration_ms": { "type": ["integer", "null"] },
+        "timed_out": { "type": "boolean" }
+      }
+    },
+    "environmentFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os_name",
+        "architecture",
+        "os_version",
+        "python_version",
+        "runtime_versions",
+        "tool_versions",
+        "environment_digest"
+      ],
+      "properties": {
+        "os_name": { "type": "string" },
+        "architecture": { "type": "string" },
+        "os_version": { "type": ["string", "null"] },
+        "python_version": { "type": ["string", "null"] },
+        "runtime_versions": { "type": "object", "additionalProperties": { "type": "string" } },
+        "tool_versions": { "type": "object", "additionalProperties": { "type": "string" } },
+        "environment_digest": { "type": ["string", "null"] }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "verification_class",
+        "summary",
+        "check_id",
+        "details",
+        "source",
+        "command",
+        "observed_at"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "verification_class": { "$ref": "#/$defs/verificationClass" },
+        "summary": { "type": "string" },
+        "check_id": { "type": ["string", "null"] },
+        "details": { "$ref": "#/$defs/jsonObject" },
+        "source": { "type": ["string", "null"] },
+        "command": {
+          "anyOf": [
+            { "$ref": "#/$defs/commandExecution" },
+            { "type": "null" }
+          ]
+        },
+        "observed_at": { "type": ["string", "null"] }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "title",
+        "message",
+        "assessment",
+        "severity",
+        "category",
+        "state",
+        "code",
+        "path",
+        "line",
+        "evidence",
+        "remediation",
+        "verification_hint",
+        "false_positive_policy",
+        "ecosystems",
+        "applicability_reason",
+        "scoring_group"
+      ],
+      "properties": {
+        "check_id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "assessment": { "$ref": "#/$defs/assessment" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "category": { "$ref": "#/$defs/checkCategory" },
+        "state": { "$ref": "#/$defs/resultState" },
+        "code": { "type": ["string", "null"] },
+        "path": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"] },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "remediation": { "type": ["string", "null"] },
+        "verification_hint": { "type": ["string", "null"] },
+        "false_positive_policy": { "type": ["string", "null"] },
+        "ecosystems": { "type": "array", "items": { "$ref": "#/$defs/ecosystem" } },
+        "applicability_reason": { "type": ["string", "null"] },
+        "scoring_group": { "type": ["string", "null"] }
+      }
+    },
+    "checkSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "name",
+        "category",
+        "verification_class",
+        "description",
+        "ecosystem",
+        "commands",
+        "enabled",
+        "severity",
+        "supported_ecosystems",
+        "limitations",
+        "false_positive_policy",
+        "scoring_group"
+      ],
+      "properties": {
+        "check_id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "$ref": "#/$defs/checkCategory" },
+        "verification_class": { "$ref": "#/$defs/verificationClass" },
+        "description": { "type": ["string", "null"] },
+        "ecosystem": {
+          "anyOf": [
+            { "$ref": "#/$defs/ecosystem" },
+            { "type": "null" }
+          ]
+        },
+        "commands": { "type": "array", "items": { "$ref": "#/$defs/commandSpec" } },
+        "enabled": { "type": "boolean" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "supported_ecosystems": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ecosystem" }
+        },
+        "limitations": { "type": "array", "items": { "type": "string" } },
+        "false_positive_policy": { "type": ["string", "null"] },
+        "scoring_group": { "type": ["string", "null"] }
+      }
+    },
+    "repoFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size_bytes", "sha256", "language", "is_symlink"],
+      "properties": {
+        "path": { "type": "string" },
+        "size_bytes": { "type": ["integer", "null"] },
+        "sha256": { "type": ["string", "null"] },
+        "language": { "type": ["string", "null"] },
+        "is_symlink": { "type": "boolean" }
+      }
+    },
+    "discoverySummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "ecosystems", "root", "total_files", "ignored_files"],
+      "properties": {
+        "files": { "type": "array", "items": { "$ref": "#/$defs/repoFile" } },
+        "ecosystems": { "type": "array", "items": { "$ref": "#/$defs/ecosystem" } },
+        "root": { "type": ["string", "null"] },
+        "total_files": { "type": "integer" },
+        "ignored_files": { "type": "integer" }
+      }
+    },
+    "verificationRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "verification_class",
+        "state",
+        "commands",
+        "environment",
+        "evidence_ids",
+        "started_at",
+        "finished_at",
+        "error"
+      ],
+      "properties": {
+        "run_id": { "type": "string" },
+        "verification_class": { "$ref": "#/$defs/verificationClass" },
+        "state": { "$ref": "#/$defs/resultState" },
+        "commands": { "type": "array", "items": { "$ref": "#/$defs/commandExecution" } },
+        "environment": {
+          "anyOf": [
+            { "$ref": "#/$defs/environmentFingerprint" },
+            { "type": "null" }
+          ]
+        },
+        "evidence_ids": { "type": "array", "items": { "type": "string" } },
+        "started_at": { "type": ["string", "null"] },
+        "finished_at": { "type": ["string", "null"] },
+        "error": { "type": ["string", "null"] }
+      }
+    },
+    "contentFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "digest", "file_count"],
+      "properties": {
+        "algorithm": { "type": "string" },
+        "digest": { "type": "string" },
+        "file_count": { "type": ["integer", "null"] }
+      }
+    },
+    "integrityMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verified", "content_fingerprint", "method", "details"],
+      "properties": {
+        "verified": { "type": "boolean" },
+        "content_fingerprint": {
+          "anyOf": [
+            { "$ref": "#/$defs/contentFingerprint" },
+            { "type": "null" }
+          ]
+        },
+        "method": { "type": ["string", "null"] },
+        "details": { "$ref": "#/$defs/jsonObject" }
+      }
+    },
+    "evidenceReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "repository",
+        "content",
+        "integrity",
+        "evidence",
+        "verification_runs",
+        "schema_version",
+        "generated_at"
+      ],
+      "properties": {
+        "receipt_id": { "type": "string" },
+        "repository": { "$ref": "#/$defs/repositoryIdentity" },
+        "content": { "$ref": "#/$defs/contentFingerprint" },
+        "integrity": { "$ref": "#/$defs/integrityMetadata" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "verification_runs": { "type": "array", "items": { "$ref": "#/$defs/verificationRun" } },
+        "schema_version": { "const": "receipt-v1" },
+        "generated_at": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
