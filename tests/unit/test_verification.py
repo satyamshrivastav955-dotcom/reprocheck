@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from reprocheck.models import CommandSpec, Ecosystem
 from reprocheck.verification import (
@@ -178,6 +179,38 @@ class WorkspaceAndExecutorTests(unittest.TestCase):
             self.assertEqual(result.status, ExecutionStatus.TIMEOUT)
             self.assertTrue(result.commands[0].timed_out)
             self.assertNotIn("must-not-be-inherited", result.commands[0].stdout)
+
+    def test_timeout_cleans_up_the_real_materialized_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            captured: dict[str, Path] = {}
+
+            from reprocheck.verification import executor as executor_module
+
+            real_materialize = executor_module.materialize_workspace
+
+            def observe_workspace(source: Path) -> object:
+                workspace = real_materialize(source)
+                captured["path"] = workspace.path
+                return workspace
+
+            with patch.object(
+                executor_module, "materialize_workspace", side_effect=observe_workspace
+            ):
+                result = execute_plan(
+                    self._command_plan(
+                        root,
+                        "-c",
+                        "import time; time.sleep(1)",
+                        timeout=0.05,
+                    ),
+                    approved=True,
+                    allow_host_exec=True,
+                )
+
+            self.assertEqual(result.status, ExecutionStatus.TIMEOUT)
+            self.assertIn("path", captured)
+            self.assertFalse(captured["path"].exists())
 
     def test_failure_and_infrastructure_error_have_distinct_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
