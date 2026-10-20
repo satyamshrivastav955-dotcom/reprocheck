@@ -342,20 +342,36 @@ class WorkspaceAndExecutorTests(unittest.TestCase):
                 ),
                 acquisition=AcquisitionPolicy(network_required=True),
             )
-            launcher = root / "docker-stub-launcher"
-            launcher.write_text(
-                f"#!{sys.executable}\n"
-                "import sys\n"
-                "args = sys.argv[1:]\n"
-                "for index, value in enumerate(args[:-1]):\n"
-                "    if value == '--env' and args[index + 1].startswith('PATH='):\n"
-                "        raise SystemExit(97)\n"
-                "if 'uv' not in args:\n"
-                "    raise SystemExit(98)\n"
-                "print('uv launched')\n",
-                encoding="utf-8",
-            )
-            launcher.chmod(0o755)
+            if sys.platform == "win32":
+                launcher = root / "docker-stub-launcher.cmd"
+                launcher_py = root / "docker-stub-launcher.py"
+                launcher_py.write_text(
+                    "import sys\n"
+                    "args = sys.argv[1:]\n"
+                    "for index, value in enumerate(args[:-1]):\n"
+                    "    if value == '--env' and args[index + 1].startswith('PATH='):\n"
+                    "        raise SystemExit(97)\n"
+                    "if 'uv' not in args:\n"
+                    "    raise SystemExit(98)\n"
+                    "print('uv launched')\n",
+                    encoding="utf-8",
+                )
+                launcher.write_text(f'@"{sys.executable}" "{launcher_py}" %*\n', encoding="utf-8")
+            else:
+                launcher = root / "docker-stub-launcher"
+                launcher.write_text(
+                    f"#!{sys.executable}\n"
+                    "import sys\n"
+                    "args = sys.argv[1:]\n"
+                    "for index, value in enumerate(args[:-1]):\n"
+                    "    if value == '--env' and args[index + 1].startswith('PATH='):\n"
+                    "        raise SystemExit(97)\n"
+                    "if 'uv' not in args:\n"
+                    "    raise SystemExit(98)\n"
+                    "print('uv launched')\n",
+                    encoding="utf-8",
+                )
+                launcher.chmod(0o755)
             windows_path = r"C:\Windows\system32;C:\repo\.venv-win\Scripts"
             with patch.dict(os.environ, {"PATH": windows_path}, clear=False):
                 result = execute_plan(
@@ -371,15 +387,28 @@ class WorkspaceAndExecutorTests(unittest.TestCase):
             self.assertNotIn("PATH", result.commands[0].command.env)
             self.assertNotIn(windows_path, result.commands[0].command.to_json())
 
-            startup_failure = root / "docker-stub-startup-failure"
-            startup_failure.write_text(
-                f"#!{sys.executable}\n"
-                "import sys\n"
-                "sys.stderr.write('exec: \\\"uv\\\": executable file not found in $PATH\\n')\n"
-                "raise SystemExit(126)\n",
-                encoding="utf-8",
-            )
-            startup_failure.chmod(0o755)
+            if sys.platform == "win32":
+                startup_failure = root / "docker-stub-startup-failure.cmd"
+                startup_failure_py = root / "docker-stub-startup-failure.py"
+                startup_failure_py.write_text(
+                    "import sys\n"
+                    "sys.stderr.write('exec: \\\"uv\\\": executable file not found in $PATH\\n')\n"
+                    "raise SystemExit(126)\n",
+                    encoding="utf-8",
+                )
+                startup_failure.write_text(
+                    f'@"{sys.executable}" "{startup_failure_py}" %*\n', encoding="utf-8"
+                )
+            else:
+                startup_failure = root / "docker-stub-startup-failure"
+                startup_failure.write_text(
+                    f"#!{sys.executable}\n"
+                    "import sys\n"
+                    "sys.stderr.write('exec: \\\"uv\\\": executable file not found in $PATH\\n')\n"
+                    "raise SystemExit(126)\n",
+                    encoding="utf-8",
+                )
+                startup_failure.chmod(0o755)
             with patch.dict(os.environ, {"PATH": windows_path}, clear=False):
                 infrastructure_error = execute_plan(
                     plan,
