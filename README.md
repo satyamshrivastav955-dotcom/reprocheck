@@ -335,6 +335,27 @@ Acquisition is marked network-enabled because dependency installation may contac
 registries. Verification commands are requested with networking disabled by the
 Docker backend. This is bounded isolation, not a claim of complete hermeticity.
 
+## How ReproCheck fits into your toolchain
+
+ReproCheck is complementary to established build, CI, comparison, security, and
+provenance tools. Its intended contribution is a developer-controlled workflow
+that connects repository inspection, approval-gated execution, two-run outcome
+comparison, selected artifact hashes, and a portable receipt.
+
+| Tool or category | Designed for | How it overlaps | When ReproCheck may help alongside it |
+|---|---|---|---|
+| Debian [`reprotest`](https://manpages.debian.org/testing/reprotest/reprotest.1.en.html) | Repeating builds under environment variations and checking artifacts | Directly overlaps on repeated execution and reproducibility comparison | Start with a supported repository profile and preserve readable run classifications and receipt evidence; ReproCheck does not replace reprotest's variation matrix or diffoscope integration. |
+| [`diffoscope`](https://diffoscope.org/) | Deep, recursive investigation of file, archive, and binary differences | Both can be used after outputs differ | Use ReproCheck to detect and contextualize drift, then diffoscope to investigate why artifacts differ. |
+| [GitHub Actions](https://docs.github.com/en/actions) and CI | Event-driven jobs, tests, builds, matrices, and deployments | Both can execute repository workflows and retain evidence | Run ReproCheck locally before CI or invoke it from CI; it is not a hosted runner or CI replacement. |
+| [Dagger](https://docs.dagger.io/getting-started/introduction/) | Programmable, portable, cached pipeline execution | Both can execute explicit work in containers | Choose Dagger for reusable pipeline architecture; choose ReproCheck for its narrower profile-and-receipt experiment. |
+| [`repo2docker`](https://repo2docker.readthedocs.io/en/stable/) | Building and running repository-derived user environment images | Both use repository inputs and containers | Use ReproCheck for repeated verification and artifact comparison after environment preparation. |
+| [Bazel hermeticity](https://bazel.build/basics/hermeticity) and build systems | Hermetic inputs, action graphs, toolchains, and caching | Both address host sensitivity and reproducibility | Use ReproCheck without migrating an existing supported workflow; it does not provide hermetic build-system guarantees. |
+| [uv](https://docs.astral.sh/uv/), [pre-commit](https://pre-commit.com/), and [Ruff](https://docs.astral.sh/ruff/) | Dependency management, hooks, linting, and formatting | ReproCheck orchestrates some of these through profiles and its own quality gate | Keep using the specialized tools; ReproCheck is not another package manager, hook manager, linter, or formatter. |
+| [Trivy](https://trivy.dev/docs/latest/), [OpenSSF Scorecard](https://github.com/ossf/scorecard), and [SLSA](https://slsa.dev/spec/v1.2/build-provenance) | Security scanning, security posture, and trusted provenance | All can contribute evidence about a repository or artifact | Use them for their security/provenance questions; ReproCheck's receipt is not a signature, attestation, or SLSA provenance statement. |
+
+See the [competitive landscape](docs/competitive-landscape.md) for the evidence,
+qualifications, implementation mapping, and non-goals behind this table.
+
 ## Security safeguards and limitations
 
 The execution path uses argument-array subprocesses, `shell=False`, explicit
