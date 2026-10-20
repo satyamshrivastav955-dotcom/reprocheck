@@ -14,6 +14,11 @@ The receipt records:
 - static findings, executed verification runs, and explicit limitations;
 - integrity metadata with a canonical SHA-256 hash.
 
+`integrity.details.canonical_sha256` is required for `receipt-v1` and must be a
+lowercase 64-character hexadecimal SHA-256 value. The loader rejects unsupported
+schema versions, malformed field types, non-finite numeric values, missing
+required fields, and invalid integrity metadata before validation proceeds.
+
 An experiment receipt keeps the existing `receipt-v1` top-level shape for
 compatibility. Its `integrity.details.experiment` object uses the nested
 `experiment-v1` contract and records the common source fingerprint, frozen plan
@@ -25,6 +30,10 @@ Canonicalization sorts JSON object keys and removes timestamps from the hashed
 payload. The integrity hash field itself is excluded from the payload before
 hashing. `reprocheck receipt validate` recomputes the hash and can also compare
 the repository content fingerprint.
+
+Validation reports structural or integrity errors separately from a repository
+content mismatch where possible. A valid receipt can still fail the optional
+repository comparison if the checkout has changed since the receipt was made.
 
 This integrity model detects accidental corruption and changes relative to a
 trusted receipt. It is not a signature or external attestation: an actor who can

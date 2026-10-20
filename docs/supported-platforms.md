@@ -8,7 +8,7 @@
 | Node.js/TypeScript | `package.json`, npm lockfile, TypeScript markers | pnpm and Yarn are detected but are not silently treated as npm verification |
 | Operating system | Linux and Windows are supported and tested platforms | Windows/macOS execution behavior uses native path handling and cross-platform process adapters |
 | Container | Docker CLI backend when available; Python uses the uv image and Node uses Node 22 slim | Docker daemon, kernel, image availability, resource flags, and image user are external prerequisites |
-| Experiment | Python `python-uv` two-run workflow with explicit artifact comparison | Docker is required for the isolated experiment; host mode is an explicitly acknowledged local-only fallback |
+| Experiment | Python `python-uv` two-run workflow with explicit artifact comparison | Docker is required for the isolated experiment; host mode is an explicitly acknowledged local-only fallback. Drift keeps passing per-run results separate from the pair-level result |
 | Other ecosystems | Reported as unsupported/partial markers | ReproCheck does not guess commands or package-manager behavior |
 
 ### Cross-platform compatibility

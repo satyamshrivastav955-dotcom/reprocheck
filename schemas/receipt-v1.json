@@ -180,7 +180,18 @@
           ]
         },
         "method": { "type": ["string", "null"] },
-        "details": { "$ref": "#/$defs/jsonObject" }
+        "details": { "$ref": "#/$defs/integrityDetails" }
+      }
+    },
+    "integrityDetails": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["canonical_sha256"],
+      "properties": {
+        "canonical_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
       }
     },
     "evidenceReceipt": {

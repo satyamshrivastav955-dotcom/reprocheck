@@ -86,6 +86,35 @@ def render_markdown(
         lines.append(f"- **Verification:** `{_md(verification_status)}`")
     if isinstance(experiment_status, str):
         lines.append(f"- **Experiment:** `{_md(experiment_status)}`")
+        run_outcomes = report.summary.get("experiment_run_outcomes")
+        if isinstance(run_outcomes, list):
+            passed = report.summary.get("experiment_runs_passed", 0)
+            failed = report.summary.get("experiment_runs_failed", 0)
+            lines.append(
+                f"- **Verification runs:** {len(run_outcomes)} (passed: {passed}, failed: {failed})"
+            )
+            for index, outcome in enumerate(run_outcomes, start=1):
+                if isinstance(outcome, dict):
+                    run_id = outcome.get("run_id", f"run-{index}")
+                    status = outcome.get("status", "unknown")
+                    state = outcome.get("state", "unknown")
+                    lines.append(
+                        f"  - Run {index} (`{_md(str(run_id))}`): "
+                        f"`{_md(str(status))}` / `{_md(str(state))}`"
+                    )
+        comparison_valid = report.summary.get("experiment_comparison_valid")
+        if isinstance(comparison_valid, bool):
+            lines.append(f"- **Comparison valid:** `{str(comparison_valid).lower()}`")
+        established = report.summary.get("reproducibility_established")
+        if isinstance(established, bool):
+            lines.append(
+                "- **Reproducibility:** `"
+                + ("established" if established else "not established")
+                + "`"
+            )
+        exit_code = report.summary.get("experiment_exit_code")
+        if isinstance(exit_code, int):
+            lines.append(f"- **Experiment exit code:** `{exit_code}`")
     if isinstance(experiment_comparison, dict):
         artifact_equal = experiment_comparison.get("artifact_equal")
         if isinstance(artifact_equal, bool):

@@ -134,6 +134,23 @@ class ReportingTests(unittest.TestCase):
                 "verification_status": "pass",
                 "experiment_status": "reproducible",
                 "experiment_comparison": {"artifact_equal": True},
+                "experiment_run_outcomes": [
+                    {
+                        "run_id": "python-uv-run-1",
+                        "status": "pass",
+                        "state": "verified_pass",
+                    },
+                    {
+                        "run_id": "python-uv-run-2",
+                        "status": "pass",
+                        "state": "verified_pass",
+                    },
+                ],
+                "experiment_runs_passed": 2,
+                "experiment_runs_failed": 0,
+                "experiment_comparison_valid": True,
+                "reproducibility_established": True,
+                "experiment_exit_code": 0,
                 "receipt_id": "receipt-demo",
             },
         )
@@ -144,10 +161,52 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("verification: pass", terminal)
         self.assertIn("experiment: reproducible", terminal)
         self.assertIn("artifacts_match: true", terminal)
+        self.assertIn("run 1 (python-uv-run-1): pass / verified_pass", terminal)
+        self.assertIn("verification_runs: 2 (passed: 2, failed: 0)", terminal)
+        self.assertIn("reproducibility: established", terminal)
         self.assertIn("receipt: receipt-demo", terminal)
         self.assertIn("**Experiment:** `reproducible`", markdown)
         self.assertIn("**Artifacts match:** `true`", markdown)
+        self.assertIn("**Verification runs:** 2 (passed: 2, failed: 0)", markdown)
+        self.assertIn("**Reproducibility:** `established`", markdown)
         self.assertIn("**Receipt:** `receipt-demo`", markdown)
+
+    def test_drift_reports_passing_runs_and_reproducibility_not_established(self) -> None:
+        report = replace(
+            _report(),
+            state=ResultState.VERIFIED_FAIL,
+            assessment=Assessment.FAIL,
+            summary={
+                "verification_status": "pass",
+                "experiment_status": "drift_detected",
+                "experiment_comparison": {"artifact_equal": False},
+                "experiment_run_outcomes": [
+                    {"run_id": "python-uv-run-1", "status": "pass", "state": "verified_pass"},
+                    {"run_id": "python-uv-run-2", "status": "pass", "state": "verified_pass"},
+                ],
+                "experiment_runs_passed": 2,
+                "experiment_runs_failed": 0,
+                "experiment_comparison_valid": True,
+                "reproducibility_established": False,
+                "experiment_exit_code": 1,
+            },
+        )
+
+        terminal = render_terminal(report)
+        markdown = render_markdown(report)
+        payload = json.loads(render_json(report))
+
+        self.assertIn("verification: pass", terminal)
+        self.assertIn("experiment: drift_detected", terminal)
+        self.assertIn("verification_runs: 2 (passed: 2, failed: 0)", terminal)
+        self.assertIn("reproducibility: not established", terminal)
+        self.assertIn("**Verification runs:** 2 (passed: 2, failed: 0)", markdown)
+        self.assertIn("**Reproducibility:** `not established`", markdown)
+        self.assertEqual(payload["summary"]["verification_status"], "pass")
+        self.assertEqual(payload["summary"]["experiment_status"], "drift_detected")
+        self.assertEqual(payload["summary"]["experiment_runs_passed"], 2)
+        self.assertFalse(payload["summary"]["reproducibility_established"])
+        self.assertEqual(payload["summary"]["experiment_exit_code"], 1)
 
 
 if __name__ == "__main__":

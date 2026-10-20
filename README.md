@@ -1,6 +1,6 @@
 # ReproCheck
 
-**Your repository works here. Prove it works everywhere.**
+**Your repository works here. Measure whether it can be reproduced.**
 
 ReproCheck is a local-first CLI for auditing reproducibility risks and collecting
 bounded evidence from a clean verification run. It is deliberately explicit:
@@ -111,8 +111,8 @@ Exit codes are stable:
 
 | Code | Meaning |
 |---:|---|
-| 0 | No finding at or above `--fail-on` |
-| 1 | A policy finding meets `--fail-on`, or an approved verification does not pass |
+| 0 | No finding at or above `--fail-on`; an approved experiment is reproducible |
+| 1 | A policy finding meets `--fail-on`, verification fails, or an experiment is drifted, mismatched, incomplete, or infrastructure-blocked |
 | 2 | Invalid usage, path, or input |
 | 3 | Unexpected internal error |
 | 130 | Interrupted by the user |
@@ -201,6 +201,12 @@ Experiment classifications are deliberately narrow:
 | `comparison_invalid` | The source changes or the frozen comparison contract is inconsistent |
 | `incomplete` | Approval, run, artifact, or other required evidence is missing |
 
+An experiment report keeps per-run execution separate from the pair-level
+reproducibility result. For example, `drift_detected` may show `Run A: pass` and
+`Run B: pass` with `artifacts_match: false`; both verification runs passed, but
+reproducibility was not established. Experiment exit code `1` reports that
+pair-level result and does not mean both runs failed.
+
 The controlled fixture in
 [`examples/reproducibility-drift-python`](examples/reproducibility-drift-python)
 intentionally writes a fresh artifact value on each passing run. It demonstrates
@@ -216,6 +222,24 @@ reprocheck receipt compare before.json after.json
 Receipts use canonical JSON and SHA-256 to detect changes relative to a trusted
 copy. A hash stored alongside a receipt is not a tamper-proof attestation; see
 [`docs/receipt-format.md`](docs/receipt-format.md).
+
+The documented drift acceptance flow is:
+
+```powershell
+uv run --locked --offline reprocheck experiment examples/reproducibility-drift-python `
+  --profile python-uv --backend docker `
+  --artifact reprocheck-demo-artifact.txt `
+  --receipt "$env:TEMP\reprocheck-experiment-receipt-final.json" `
+  --format terminal --approve
+
+reprocheck receipt validate "$env:TEMP\reprocheck-experiment-receipt-final.json" `
+  --repository examples/reproducibility-drift-python
+```
+
+The fixture is expected to return exit code `1` because it demonstrates artifact
+drift. The two verification runs should each pass. Copy the receipt, change an
+integrity-relevant field, and run `receipt validate` again; the tampered copy must
+be rejected.
 
 ## Development checks
 

@@ -37,6 +37,7 @@ from .receipts import (
 from .reporting import render_json, render_markdown, render_terminal, sorted_findings
 from .scoring import ScoreSummary, score_report
 from .verification import (
+    ExperimentResult,
     ExperimentStatus,
     ProfileError,
     VerificationPlan,
@@ -342,6 +343,35 @@ def _show_experiment_plan(plan: VerificationPlan, artifact_paths: tuple[str, ...
         )
 
 
+def _experiment_verification_status(experiment: ExperimentResult) -> str:
+    """Summarize command execution without conflating it with reproducibility."""
+
+    results = getattr(experiment, "results", ())
+    statuses = tuple(result.status.value for result in results)
+    if statuses and all(status == "pass" for status in statuses):
+        return "pass"
+    if "fail" in statuses:
+        return "fail"
+    return "not_verified"
+
+
+def _experiment_run_summary(experiment: ExperimentResult) -> list[JSONValue]:
+    """Expose compact, machine-readable per-run outcomes in report summaries."""
+
+    summaries: list[JSONValue] = []
+    for result in getattr(experiment, "results", ()):
+        summaries.append(
+            {
+                "run_id": result.run.run_id,
+                "status": result.status.value,
+                "state": result.run.state.value,
+                "passed": result.status.value == "pass",
+                "failed": result.status.value == "fail",
+            }
+        )
+    return summaries
+
+
 def verify_repository(
     repository: Path,
     *,
@@ -448,10 +478,17 @@ def experiment_repository(
             receipt.to_json(indent=2) + "\n", encoding="utf-8", newline="\n"
         )
 
+    verification_status = _experiment_verification_status(experiment)
+    comparison_valid = experiment.classification not in {
+        ExperimentStatus.INFRASTRUCTURE_FAILURE,
+        ExperimentStatus.COMPARISON_INVALID,
+        ExperimentStatus.INCOMPLETE,
+    }
+    reproducibility_established = experiment.classification == ExperimentStatus.REPRODUCIBLE
+
     if experiment.classification == ExperimentStatus.REPRODUCIBLE:
         state = ResultState.VERIFIED_PASS
         assessment = Assessment.PASS
-        verification_status = "pass"
     elif experiment.classification in {
         ExperimentStatus.DRIFT_DETECTED,
         ExperimentStatus.PASS_FAIL_DISAGREEMENT,
@@ -459,15 +496,12 @@ def experiment_repository(
     }:
         state = ResultState.VERIFIED_FAIL
         assessment = Assessment.FAIL
-        verification_status = "fail"
     elif experiment.classification == ExperimentStatus.INFRASTRUCTURE_FAILURE:
         state = ResultState.NOT_VERIFIED
         assessment = Assessment.BLOCKED
-        verification_status = "not_verified"
     else:
         state = ResultState.NOT_VERIFIED
         assessment = Assessment.ERROR
-        verification_status = "not_verified"
 
     summary: dict[str, JSONValue] = dict(static_report.summary)
     summary.update(
@@ -482,6 +516,16 @@ def experiment_repository(
             "experiment_plan_fingerprint": experiment.plan_fingerprint,
             "experiment_comparison": experiment.comparison,
             "experiment_limitations": list(experiment.limitations),
+            "experiment_run_outcomes": _experiment_run_summary(experiment),
+            "experiment_runs_passed": sum(
+                result.status.value == "pass" for result in experiment.results
+            ),
+            "experiment_runs_failed": sum(
+                result.status.value == "fail" for result in experiment.results
+            ),
+            "experiment_comparison_valid": comparison_valid,
+            "reproducibility_established": reproducibility_established,
+            "experiment_exit_code": 0 if reproducibility_established else 1,
             "receipt_id": receipt.receipt_id,
         }
     )
@@ -577,11 +621,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = scan_repository(Path(arguments.path))
         rendered = _render(report, arguments.format)
         _write_or_print(rendered, arguments.output)
-        if (
-            arguments.command in {"verify", "experiment"}
-            and report.summary.get("verification_status") != "pass"
-        ):
+        if arguments.command == "verify" and report.summary.get("verification_status") != "pass":
             return 1
+        if arguments.command == "experiment":
+            if report.summary.get("experiment_status") != ExperimentStatus.REPRODUCIBLE:
+                return 1
+            if report.summary.get("verification_status") != "pass":
+                return 1
         fail_on = Severity(arguments.fail_on)
         return 1 if policy_findings(report, fail_on) else 0
     except KeyboardInterrupt:

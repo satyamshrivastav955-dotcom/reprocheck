@@ -58,3 +58,9 @@ parent traversal, symlinks, and non-regular entries are rejected. Artifact hashe
 and bounded redacted command evidence are stored in the receipt. A passing test with
 a different selected artifact is reported as drift, while missing or incomplete
 evidence is reported as incomplete rather than as a pass.
+
+Experiment reports expose Run A and Run B outcomes independently from the
+pair-level classification. Therefore `drift_detected` can legitimately contain
+two `verified_pass` runs: the verification commands passed, but the selected
+artifact evidence did not match. The process exits nonzero for that negative
+reproducibility conclusion without relabeling either run as a test failure.

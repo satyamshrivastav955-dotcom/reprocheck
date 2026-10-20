@@ -1,3 +1,4 @@
+import copy
 import tempfile
 import unittest
 from dataclasses import replace
@@ -21,6 +22,7 @@ from reprocheck.receipts import (
     canonical_hash,
     compare_receipts,
     load_receipt,
+    receipt_from_dict,
     validate_receipt,
 )
 
@@ -64,6 +66,128 @@ def _run(
 
 
 class ReceiptTests(unittest.TestCase):
+    def test_loader_accepts_a_valid_receipt_v1_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            payload = build_receipt(
+                Path(directory), profile="manual", verification_runs=(_run(),)
+            ).to_dict()
+
+            loaded = receipt_from_dict(payload)
+
+            self.assertEqual(loaded.schema_version, "receipt-v1")
+            self.assertTrue(validate_receipt(loaded).valid)
+
+    def test_loader_rejects_malformed_boolean_integer_and_fingerprint_types(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = build_receipt(
+                Path(directory), profile="manual", verification_runs=(_run(),)
+            ).to_dict()
+            cases = (
+                ("repository.is_dirty", ("repository", "is_dirty"), 1),
+                ("content.file_count", ("content", "file_count"), True),
+                ("content.digest", ("content", "digest"), False),
+                ("integrity.verified", ("integrity", "verified"), 1),
+                ("integrity.method", ("integrity", "method"), 1),
+                ("integrity.details", ("integrity", "details"), []),
+                (
+                    "integrity.content_fingerprint.file_count",
+                    ("integrity", "content_fingerprint", "file_count"),
+                    False,
+                ),
+                (
+                    "command.exit_code",
+                    ("verification_runs", 0, "commands", 0, "exit_code"),
+                    False,
+                ),
+                (
+                    "command.timed_out",
+                    ("verification_runs", 0, "commands", 0, "timed_out"),
+                    0,
+                ),
+            )
+
+            for label, path, replacement in cases:
+                with self.subTest(field=label):
+                    payload = copy.deepcopy(base)
+                    target = payload
+                    for key in path[:-1]:
+                        target = target[key]
+                    target[path[-1]] = replacement
+
+                    with self.assertRaises(ReceiptFormatError):
+                        receipt_from_dict(payload)
+
+    def test_loader_rejects_missing_or_invalid_integrity_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = build_receipt(
+                Path(directory), profile="manual", verification_runs=(_run(),)
+            ).to_dict()
+            cases = (
+                ("missing integrity", lambda payload: payload.pop("integrity")),
+                (
+                    "missing canonical hash",
+                    lambda payload: payload["integrity"]["details"].pop("canonical_sha256"),
+                ),
+                (
+                    "non-string canonical hash",
+                    lambda payload: payload["integrity"]["details"].update(canonical_sha256=True),
+                ),
+                (
+                    "malformed canonical hash",
+                    lambda payload: payload["integrity"]["details"].update(
+                        canonical_sha256="g" * 64
+                    ),
+                ),
+            )
+
+            for label, mutate in cases:
+                with self.subTest(case=label):
+                    payload = copy.deepcopy(base)
+                    mutate(payload)
+                    with self.assertRaises(ReceiptFormatError):
+                        receipt_from_dict(payload)
+
+    def test_validator_rejects_missing_or_invalid_integrity_on_models(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = build_receipt(Path(directory), profile="manual", verification_runs=(_run(),))
+
+            missing_hash_details = dict(receipt.integrity.details)
+            missing_hash_details.pop("canonical_sha256")
+            missing_hash = replace(
+                receipt,
+                integrity=replace(receipt.integrity, details=missing_hash_details),
+            )
+            self.assertFalse(validate_receipt(missing_hash).valid)
+            self.assertIn(
+                "canonical_sha256 is missing", " ".join(validate_receipt(missing_hash).errors)
+            )
+
+            invalid_integrity = replace(
+                receipt,
+                integrity=replace(
+                    receipt.integrity,
+                    verified=1,
+                    content_fingerprint=None,
+                    details={"canonical_sha256": True},
+                ),
+            )
+            validation = validate_receipt(invalid_integrity)
+            self.assertFalse(validation.valid)
+            self.assertIn("canonical_sha256 is invalid", " ".join(validation.errors))
+            self.assertIn("integrity.verified must be a boolean", validation.errors)
+            self.assertIn("integrity content fingerprint is missing", validation.errors)
+
+    def test_loader_rejects_unsupported_receipt_schema_versions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            payload = build_receipt(Path(directory), profile="manual").to_dict()
+
+            for schema_version in ("receipt-v2", True, None):
+                with self.subTest(schema_version=schema_version):
+                    unsupported = copy.deepcopy(payload)
+                    unsupported["schema_version"] = schema_version
+                    with self.assertRaises(ReceiptFormatError):
+                        receipt_from_dict(unsupported)
+
     def test_receipt_contains_profile_findings_limitations_and_valid_canonical_hash(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

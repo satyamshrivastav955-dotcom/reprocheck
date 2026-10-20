@@ -4,10 +4,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ..fingerprint import compute_content_fingerprint
-from ..models import EvidenceReceipt
+from ..models import ContentFingerprint, EvidenceReceipt, IntegrityMetadata
 from .canonical import CANONICAL_HASH_KEY, canonical_hash
+
+_HEX_DIGITS = frozenset("0123456789abcdef")
+
+
+def _valid_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in _HEX_DIGITS for character in value)
+    )
+
+
+def _valid_content_fingerprint(value: Any) -> bool:
+    return (
+        isinstance(value, ContentFingerprint)
+        and isinstance(value.algorithm, str)
+        and isinstance(value.digest, str)
+        and (value.file_count is None or type(value.file_count) is int)
+    )
 
 
 @dataclass(frozen=True)
@@ -32,18 +52,52 @@ def validate_receipt(
     """Recompute the canonical SHA-256 and optionally verify repository content."""
 
     errors: list[str] = []
-    expected_value = receipt.integrity.details.get(CANONICAL_HASH_KEY)
-    expected_hash = expected_value if isinstance(expected_value, str) else None
-    actual_hash = canonical_hash(receipt)
-    if expected_hash is None:
+    expected_hash: str | None = None
+    if not _valid_content_fingerprint(receipt.content):
+        errors.append("receipt content fingerprint is invalid")
+
+    integrity = receipt.integrity
+    if not isinstance(integrity, IntegrityMetadata):
+        errors.append("integrity metadata is invalid")
+        integrity_details: Any = None
+    else:
+        integrity_details = integrity.details
+
+    expected_value = (
+        integrity_details.get(CANONICAL_HASH_KEY) if isinstance(integrity_details, dict) else None
+    )
+    if expected_value is None:
         errors.append(f"integrity.details.{CANONICAL_HASH_KEY} is missing")
-    elif expected_hash != actual_hash:
+    elif not _valid_sha256(expected_value):
+        errors.append(f"integrity.details.{CANONICAL_HASH_KEY} is invalid")
+    else:
+        expected_hash = expected_value
+
+    actual_hash: str | None
+    try:
+        actual_hash = canonical_hash(receipt)
+    except (TypeError, ValueError):
+        actual_hash = None
+        errors.append("receipt cannot be canonicalized")
+    if expected_hash is not None and actual_hash is not None and expected_hash != actual_hash:
         errors.append("canonical receipt SHA-256 does not match integrity metadata")
 
-    if not receipt.integrity.verified:
+    if isinstance(integrity, IntegrityMetadata) and type(integrity.verified) is not bool:
+        errors.append("integrity.verified must be a boolean")
+    elif isinstance(integrity, IntegrityMetadata) and not integrity.verified:
         errors.append("integrity metadata is not marked verified")
-    if receipt.integrity.content_fingerprint != receipt.content:
-        errors.append("integrity content fingerprint does not match receipt content")
+
+    if isinstance(integrity, IntegrityMetadata):
+        if integrity.content_fingerprint is None:
+            errors.append("integrity content fingerprint is missing")
+        elif not _valid_content_fingerprint(integrity.content_fingerprint):
+            errors.append("integrity content fingerprint is invalid")
+        elif integrity.content_fingerprint != receipt.content:
+            errors.append("integrity content fingerprint does not match receipt content")
+        if integrity.method is not None and not isinstance(integrity.method, str):
+            errors.append("integrity.method must be a string or null")
+        if not isinstance(integrity.details, dict):
+            errors.append("integrity.details must be an object")
 
     content_matches: bool | None = None
     if repository is not None:
