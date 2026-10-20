@@ -173,10 +173,14 @@ def _resource_preexec(
         return None, ("Process resource limits are unavailable on this platform.",)
 
     def limit_resources() -> None:
-        if cpu_seconds is not None and hasattr(resource, "RLIMIT_CPU"):
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
-        if address_space_bytes is not None and hasattr(resource, "RLIMIT_AS"):
-            resource.setrlimit(resource.RLIMIT_AS, (address_space_bytes, address_space_bytes))
+        setrlimit = getattr(resource, "setrlimit", None)
+        if callable(setrlimit):
+            rlimit_cpu = getattr(resource, "RLIMIT_CPU", None)
+            if cpu_seconds is not None and rlimit_cpu is not None:
+                setrlimit(rlimit_cpu, (cpu_seconds, cpu_seconds))
+            rlimit_as = getattr(resource, "RLIMIT_AS", None)
+            if address_space_bytes is not None and rlimit_as is not None:
+                setrlimit(rlimit_as, (address_space_bytes, address_space_bytes))
 
     return limit_resources, ()
 
@@ -228,27 +232,38 @@ def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
             process.kill()
         return
 
-    try:
-        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-    except (OSError, ProcessLookupError):
+    killpg = getattr(os, "killpg", None)
+    getpgid = getattr(os, "getpgid", None)
+    sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
+
+    if callable(killpg) and callable(getpgid):
         try:
-            process.terminate()
-        except OSError:
-            pass
-    try:
-        process.wait(timeout=0.5)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            killpg(getpgid(process.pid), signal.SIGTERM)
         except (OSError, ProcessLookupError):
             try:
-                process.kill()
+                process.terminate()
             except OSError:
                 pass
         try:
-            process.wait(timeout=1.0)
+            process.wait(timeout=0.5)
         except subprocess.TimeoutExpired:
-            pass
+            try:
+                killpg(getpgid(process.pid), sigkill)
+            except (OSError, ProcessLookupError):
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                pass
+    else:
+        try:
+            process.terminate()
+            process.wait(timeout=0.5)
+        except (OSError, subprocess.TimeoutExpired):
+            process.kill()
 
 
 def _run_argv(
