@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="514" viewBox="0 0 1000 514" role="img" aria-labelledby="drift-title drift-desc">
+  <title id="drift-title">Two passing runs. Different artifacts. Reproducibility not established.</title>
+  <desc id="drift-desc">An observed run of the bundled Python drift fixture with the explicitly acknowledged host backend. Run A and Run B both returned pass / verified_pass. The selected file reprocheck-demo-artifact.txt had SHA-256 hashes beginning b29eb589dbd740bd and 7deea43db80625ff respectively. The artifact hashes differed, so the experiment reported drift_detected and exited 1. These are actual shortened file hashes, not simulated values. Host execution is not a sandbox; Docker was unavailable in the capture environment.</desc>
+  <defs>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+      .mono { font-family: "DejaVu Sans Mono", Consolas, monospace; }
+      .label { fill: #b7b0a6; font-size: 16px; }
+      .main { fill: #f4f0e8; }
+      .line { stroke: #48433d; stroke-width: 1.5; fill: none; }
+    </style>
+  </defs>
+  <rect width="1000" height="514" rx="10" fill="#111110"/>
+  <text x="32" y="35" class="label" font-weight="600" letter-spacing="2">REPROCHECK / THE REPRODUCIBILITY GAP</text>
+  <text x="32" y="83" class="main" font-size="34" font-weight="600" letter-spacing="-0.7">The tests agree. The artifacts don’t.</text>
+
+  <g transform="translate(32 112)">
+    <rect width="452" height="204" rx="10" fill="#1c1b19" stroke="#48433d"/>
+    <text x="24" y="37" class="label" font-weight="600" letter-spacing="1.5">RUN A</text>
+    <text x="428" y="37" class="main" font-size="17" font-weight="600" text-anchor="end">VERIFICATION PASSED</text>
+    <text x="24" y="78" class="mono main" font-size="22">pass / verified_pass</text>
+    <path d="M24 100h404" class="line"/>
+    <text x="24" y="130" class="mono main" font-size="17">reprocheck-demo-artifact.txt</text>
+    <text x="24" y="159" class="label">File SHA-256 · shortened</text>
+    <text x="24" y="186" class="mono main" font-size="21">b29eb589dbd740bd…</text>
+  </g>
+
+  <g transform="translate(516 112)">
+    <rect width="452" height="204" rx="10" fill="#1c1b19" stroke="#48433d"/>
+    <text x="24" y="37" class="label" font-weight="600" letter-spacing="1.5">RUN B</text>
+    <text x="428" y="37" class="main" font-size="17" font-weight="600" text-anchor="end">VERIFICATION PASSED</text>
+    <text x="24" y="78" class="mono main" font-size="22">pass / verified_pass</text>
+    <path d="M24 100h404" class="line"/>
+    <text x="24" y="130" class="mono main" font-size="17">reprocheck-demo-artifact.txt</text>
+    <text x="24" y="159" class="label">File SHA-256 · shortened</text>
+    <text x="24" y="186" class="mono main" font-size="21">7deea43db80625ff…</text>
+  </g>
+
+  <path d="M258 316v25h484v-25M500 341v27" fill="none" stroke="#e0645a" stroke-width="1.5"/>
+  <path d="m494 361 6 7 6-7" fill="none" stroke="#e0645a" stroke-width="1.5"/>
+  <rect x="323" y="328" width="354" height="25" fill="#111110"/>
+  <text x="500" y="346" text-anchor="middle" fill="#e0645a" font-size="17" font-weight="600">Different selected artifact hashes</text>
+
+  <rect x="32" y="380" width="936" height="80" rx="10" fill="#1c1b19" stroke="#e0645a"/>
+  <text x="56" y="415" class="mono" fill="#e0645a" font-size="23" font-weight="600">drift_detected</text>
+  <text x="56" y="442" class="label">Experiment result · exit 1</text>
+  <text x="944" y="427" class="main" font-size="25" font-weight="600" text-anchor="end">Reproducibility not established.</text>
+  <text x="32" y="492" class="label">Observed bundled fixture · python-uv · host backend (not a sandbox) · hashes vary on rerun</text>
+</svg>

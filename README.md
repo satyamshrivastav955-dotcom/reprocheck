@@ -86,6 +86,9 @@ experiment-level result says the selected outputs were not equal.
   experiment workflows. Static scans do not require Docker.
 - GNU Make only if you want to use the full `make test` quality-gate wrapper.
 
+No environment variables are required. `NO_COLOR` and `TERM` only control
+optional terminal presentation; no cloud credentials are needed for the core CLI.
+
 Install uv using the [official installation instructions](https://docs.astral.sh/uv/getting-started/installation/),
 then verify the tools before continuing:
 
@@ -291,6 +294,24 @@ finding, verification failure, drift, disagreement, incompleteness, or blocked
 infrastructure; `2` means invalid usage or input; `3` means an unexpected
 internal error; and `130` means interruption.
 
+### Static score versus verified score
+
+`score` summarizes bounded static readiness checks, using the least optimistic
+applicable finding in each weighted group. `verified_score` is separate execution
+coverage, not a reproducibility percentage. Recognized profile test/build
+outcomes are linked to `RC-CMD-001` and can contribute only the **commands** group
+(15 points). Acquisition alone earns no verified credit. Failed, denied, missing,
+or unlinked verification evidence earns no positive credit.
+
+A passing suite does not verify CI, lockfiles, portability, environment
+documentation, or repository hygiene, and does not erase static warnings. The
+verified denominator retains all statically applicable groups; unverified groups
+remain zero and are identified in the limitations. Unsupported/not-applicable
+findings are excluded before weighting. Terminal, JSON, and Markdown show both
+scores and their group breakdowns. Artifact equality and experiment classification
+are still independent: two passing suites can earn command-execution credit
+while the overall experiment reports `drift_detected`.
+
 ## Receipts and integrity
 
 Receipts are local JSON evidence files. They contain the source fingerprint,
@@ -315,12 +336,21 @@ The CLI exposes these verification profiles:
 | Profile | Requirements | Commands planned |
 |---|---|---|
 | `python-uv` | `pyproject.toml` and `uv.lock` | `uv sync --locked`, then `uv run python -m pytest` when tests are present |
-| `python-pip-editable` | Python project metadata; explicit opt-in | `python -m pip install -e .`, then `python -m pytest` when tests are present |
+| `python-pip-editable` | Python project metadata and discoverable test environment; explicit opt-in | One editable install with recognized test/dev requirements and extras, then the recognized pytest or unittest command |
 | `node-npm` | `package.json` and `package-lock.json` | `npm ci`, then declared `npm test`/`npm run build` scripts |
 
 Aliases accepted by the CLI are `python`, `python-pip`, and `node`. ReproCheck
 does not silently turn pnpm, Yarn, an unfamiliar lockfile, or another ecosystem
 into an npm or Python verification.
+
+For a non-uv Python project, explicitly choose `--profile python-pip-editable`.
+It inspects conventional test/dev requirements and extras before approval. If
+the runner or dependencies cannot be established, planning stops with actionable
+guidance rather than attempting an incomplete test environment. PEP 735 groups
+are **not** pip extras; this profile currently reports them as unsupported.
+The `python-uv` profile still requires a real `uv.lock`. An unlocked editable
+install does not establish dependency determinism. See
+[supported layouts and profile limits](docs/supported-platforms.md).
 
 Backends:
 

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="856" height="416" viewBox="0 0 856 416" role="img" aria-labelledby="title desc">
+<title id="title">ReproCheck CLI welcome — actual terminal output</title>
+<desc id="desc">Faithful SVG rendering of the genuine 86-column CLI welcome, cropped to its identity, purpose and first-command panel. Passing tests does not prove reproducibility. Start here: reprocheck scan . — read-only repository inspection.</desc>
+<rect width="856" height="416" rx="10" fill="#111110"/>
+<g font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" xml:space="preserve">
+<text x="24.000" y="40" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="40" fill="#858585" font-weight="400">R E P R O C H E C K</text>
+<text x="226.299" y="40" fill="#ffffff" font-weight="400">  </text>
+<text x="245.566" y="40" fill="#858585" font-weight="400">---------------------------------------------------</text>
+<text x="736.864" y="40" fill="#ffffff" font-weight="400">  </text>
+<text x="756.131" y="40" fill="#ffffff" font-weight="400">v0.1.0</text>
+<text x="24.000" y="86" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="86" fill="#ffffff" font-weight="700">####  ##### ####  ####   ###</text>
+<text x="312.999" y="86" fill="#ffffff" font-weight="400">  </text>
+<text x="332.266" y="86" fill="#ff5555" font-weight="700"> #### #   # #####  #### #   #</text>
+<text x="24.000" y="109" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="109" fill="#ffffff" font-weight="700">#   # #     #   # #   # #   #</text>
+<text x="322.632" y="109" fill="#ffffff" font-weight="400">  </text>
+<text x="341.899" y="109" fill="#ff5555" font-weight="700">#     #   # #     #     #  #</text>
+<text x="24.000" y="132" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="132" fill="#ffffff" font-weight="700">####  ####  ####  ####  #   #</text>
+<text x="322.632" y="132" fill="#ffffff" font-weight="400">  </text>
+<text x="341.899" y="132" fill="#ff5555" font-weight="700">#     ##### ####  #     ###</text>
+<text x="24.000" y="155" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="155" fill="#ffffff" font-weight="700">#  #  #     #     #  #  #   #</text>
+<text x="322.632" y="155" fill="#ffffff" font-weight="400">  </text>
+<text x="341.899" y="155" fill="#ff5555" font-weight="700">#     #   # #     #     #  #</text>
+<text x="24.000" y="178" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="178" fill="#ffffff" font-weight="700">#   # ##### #     #   #  ###</text>
+<text x="312.999" y="178" fill="#ffffff" font-weight="400">  </text>
+<text x="332.266" y="178" fill="#ff5555" font-weight="700"> #### #   # #####  #### #   #</text>
+<text x="24.000" y="201" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="201" fill="#ffffff" font-weight="400">Passing tests does not prove reproducibility.</text>
+<text x="24.000" y="224" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="224" fill="#858585" font-weight="400">ReproCheck runs controlled experiments in isolated environments, compares</text>
+<text x="24.000" y="247" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="247" fill="#858585" font-weight="400">selected artifacts, and records the evidence.</text>
+<text x="24.000" y="293" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="293" fill="#858585" font-weight="400">+------------------------------------------------------------------------------+</text>
+<text x="24.000" y="316" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="316" fill="#858585" font-weight="400">|</text>
+<text x="52.900" y="316" fill="#55ff55" font-weight="400">  START HERE</text>
+<text x="168.500" y="316" fill="#ffffff" font-weight="400">                                                                  </text>
+<text x="804.297" y="316" fill="#858585" font-weight="400">|</text>
+<text x="24.000" y="339" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="339" fill="#858585" font-weight="400">|</text>
+<text x="52.900" y="339" fill="#ffffff" font-weight="400">  &gt; </text>
+<text x="91.433" y="339" fill="#ffffff" font-weight="400">reprocheck</text>
+<text x="187.766" y="339" fill="#ffffff" font-weight="400"> </text>
+<text x="197.399" y="339" fill="#55ffff" font-weight="400">scan</text>
+<text x="235.933" y="339" fill="#ffffff" font-weight="400"> </text>
+<text x="245.566" y="339" fill="#ffffff" font-weight="400">.</text>
+<text x="255.199" y="339" fill="#ffffff" font-weight="400">                                                         </text>
+<text x="804.297" y="339" fill="#858585" font-weight="400">|</text>
+<text x="24.000" y="362" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="362" fill="#858585" font-weight="400">|</text>
+<text x="52.900" y="362" fill="#858585" font-weight="400">    Read-only: inspect the repository without executing it.</text>
+<text x="621.265" y="362" fill="#ffffff" font-weight="400">                   </text>
+<text x="804.297" y="362" fill="#858585" font-weight="400">|</text>
+<text x="24.000" y="385" fill="#ffffff" font-weight="400">  </text>
+<text x="43.267" y="385" fill="#858585" font-weight="400">+------------------------------------------------------------------------------+</text>
+</g>
+</svg>

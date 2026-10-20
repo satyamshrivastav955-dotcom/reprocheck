@@ -44,6 +44,21 @@ receipts, transparency logs, and external attestations are future work.
 content, commands, findings, outcomes, and environment. It does not claim that
 two different environments are equivalent.
 
+The CLI validates both receipts' canonical integrity before comparison; an
+invalid input returns exit `2` instead of a potentially misleading `equal`.
+Validation returning `valid` (exit `0`) describes **receipt integrity**, not the
+verification outcome: a receipt can be valid while its run state is
+`verified_fail`. Inspect `verification_runs`, command exit codes, and recorded
+outcome/classification separately. Comparing passing and failing receipts reports
+an `outcome` change even when their source and argv match. Comparison prints
+category names, not raw command logs or environment values.
+
+New recognized test/build execution evidence uses the existing optional
+`evidence[].check_id` field (`RC-CMD-001`) and phase metadata to support verified
+command-score attribution. The top-level `receipt-v1` schema is unchanged; old
+receipts with no such attribution remain readable and integrity-valid. No scores
+or outcomes are rewritten when loading historical evidence.
+
 Experiment artifact manifests use `artifacts-v1`. They hash explicitly selected
 workspace-relative files or directories using sorted relative paths, byte sizes,
 and raw file bytes. Missing, empty, or unselected artifact evidence is incomplete;

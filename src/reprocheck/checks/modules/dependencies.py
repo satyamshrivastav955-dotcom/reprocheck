@@ -7,6 +7,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from typing import Literal
 
 from ...models import (
     Assessment,
@@ -50,7 +51,7 @@ MANIFEST_ECOSYSTEMS: dict[str, Ecosystem] = {
     "mix.exs": Ecosystem.ELIXIR,
 }
 LOCKFILE_NAMES: dict[Ecosystem, frozenset[str]] = {
-    Ecosystem.PYTHON: frozenset({"uv.lock", "poetry.lock", "pipfile.lock"}),
+    Ecosystem.PYTHON: frozenset({"uv.lock", "poetry.lock", "pipfile.lock", "pylock.toml"}),
     Ecosystem.NODE: frozenset({"package-lock.json", "pnpm-lock.yaml", "yarn.lock"}),
     Ecosystem.GO: frozenset({"go.sum"}),
     Ecosystem.RUST: frozenset({"cargo.lock"}),
@@ -184,7 +185,9 @@ def _validate_lockfile(context: CheckContext, path: str) -> tuple[str, str | Non
             if isinstance(parsed, dict)
             else ("malformed", "lockfile JSON is not an object")
         )
-    if name.endswith((".lock", ".lockfile")) and name not in {"gemfile.lock", "mix.lock"}:
+    if name == "pylock.toml" or (
+        name.endswith((".lock", ".lockfile")) and name not in {"gemfile.lock", "mix.lock"}
+    ):
         try:
             parsed = tomllib.loads(result.text)
         except tomllib.TOMLDecodeError as error:
@@ -195,6 +198,91 @@ def _validate_lockfile(context: CheckContext, path: str) -> tuple[str, str | Non
             else ("malformed", "lockfile TOML is not an object")
         )
     return "ok", None
+
+
+def _tool_only_pyproject(context: CheckContext, observation: ManifestObservation) -> bool:
+    if PurePosixPath(observation.path).name.lower() != "pyproject.toml":
+        return False
+    result = read_known_text(context, observation.path)
+    if result.status != "ok":
+        return False
+    parsed = tomllib.loads(result.text)  # Syntax was checked by manifest_observations.
+    tool = parsed.get("tool", {})
+    return not any(key in parsed for key in ("project", "build-system", "dependency-groups")) and (
+        not isinstance(tool, dict) or "poetry" not in tool
+    )
+
+
+_PINNED_REQUIREMENT_RE = re.compile(
+    r"(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9_, .-]+\])?"
+    r"\s*={2,3}\s*[A-Za-z0-9][A-Za-z0-9.!+_-]*"
+)
+
+
+def _requirements_pins(
+    context: CheckContext, paths: tuple[str, ...]
+) -> tuple[Literal["pinned", "unlocked", "unsupported"], frozenset[str]]:
+    """Recognize exact direct pins, without following includes or resolving a graph."""
+
+    unsupported = not paths
+    names: set[str] = set()
+    for path in paths:
+        result = read_known_text(context, path)
+        if result.status != "ok":
+            unsupported = True
+            continue
+        lines = re.sub(r"\\\r?\n\s*", " ", result.text).splitlines()
+        found = False
+        for raw_line in lines:
+            line = re.split(r"\s+#", raw_line, maxsplit=1)[0].strip()
+            if not line or line.startswith("#"):
+                continue
+            found = True
+            if line.startswith("-") or "@" in line or "://" in line:
+                unsupported = True
+                continue
+            requirement = line.split(";", 1)[0].strip()
+            requirement = re.sub(r"\s+--hash=[A-Za-z0-9]+:[a-fA-F0-9]+", "", requirement)
+            match = _PINNED_REQUIREMENT_RE.fullmatch(requirement)
+            if match is None:
+                return "unlocked", frozenset()
+            names.add(re.sub(r"[-_.]+", "-", match["name"]).lower())
+        unsupported = unsupported or not found
+    return ("unsupported" if unsupported else "pinned"), frozenset(names)
+
+
+def _pins_cover_python_manifests(
+    context: CheckContext,
+    observations: tuple[ManifestObservation, ...],
+    requirements: tuple[str, ...],
+    names: frozenset[str],
+) -> bool:
+    """Do not let an unrelated/dev-only pin list mask declared library dependencies."""
+
+    for item in observations:
+        if item.ecosystem != Ecosystem.PYTHON or item.path in requirements:
+            continue
+        if not any(PurePosixPath(path).name.lower() == "requirements.txt" for path in requirements):
+            return False
+        if PurePosixPath(item.path).name.lower() != "pyproject.toml":
+            return False  # Legacy/executable metadata is not interpreted here.
+        result = read_known_text(context, item.path)
+        if result.status != "ok":
+            return False
+        project = tomllib.loads(result.text).get("project", {})
+        if not isinstance(project, dict):
+            return False
+        dynamic = project.get("dynamic", [])
+        if not isinstance(dynamic, list) or "dependencies" in dynamic:
+            return False
+        dependencies = project.get("dependencies", [])
+        if not isinstance(dependencies, list):
+            return False
+        for dependency in dependencies:
+            match = re.match(r"([A-Za-z0-9][A-Za-z0-9._-]*)", str(dependency))
+            if match is None or re.sub(r"[-_.]+", "-", match[1]).lower() not in names:
+                return False
+    return True
 
 
 MANIFEST_SPEC = CheckSpec(
@@ -316,7 +404,11 @@ LOCK_SPEC = CheckSpec(
     ),
     severity=Severity.HIGH,
     supported_ecosystems=ALL_RUNTIME_ECOSYSTEMS,
-    limitations=("Presence is checked without resolving or comparing dependency graphs.",),
+    limitations=(
+        "Presence is checked without resolving or comparing dependency graphs.",
+        "Exact requirements pins cover declared entries only, not transitive dependency closure.",
+        "Requirements includes, editable installs, and direct URLs are not resolved.",
+    ),
     false_positive_policy="Do not treat an unfamiliar lockfile as satisfying the check.",
     scoring_group="dependencies",
 )
@@ -348,23 +440,29 @@ class LockfilePresenceCheck(BaseCheck):
                     path=observation.path,
                 ),
             )
+        observations = tuple(
+            item for item in observations if not _tool_only_pyproject(context, item)
+        )
         ecosystems = tuple(dict.fromkeys(observation.ecosystem for observation in observations))
         if not ecosystems:
             return (
                 unsupported_finding(
                     self.spec,
                     title="Lockfile applicability is unknown",
-                    message="No recognized dependency manifest was discovered.",
-                    reason="Lockfile expectations require a recognized dependency manifest.",
+                    message="No recognized dependency declaration was discovered.",
+                    reason=(
+                        "Lockfile expectations require dependency declarations; "
+                        "tool-only configuration does not establish applicability."
+                    ),
                 ),
             )
 
         paths = {PurePosixPath(path).name.lower(): path for path in top_level_paths(context)}
-        missing = tuple(
+        missing = [
             ecosystem
             for ecosystem in ecosystems
             if not any(name in paths for name in LOCKFILE_NAMES.get(ecosystem, frozenset()))
-        )
+        ]
         present = tuple(
             paths[name]
             for ecosystem in ecosystems
@@ -383,7 +481,7 @@ class LockfilePresenceCheck(BaseCheck):
                         path=lockfile_path,
                     ),
                 )
-            if status == "malformed":
+            if status != "ok":
                 return (
                     parse_error_finding(
                         self.spec,
@@ -395,6 +493,41 @@ class LockfilePresenceCheck(BaseCheck):
                         path=lockfile_path,
                     ),
                 )
+        pinned_paths: tuple[str, ...] = ()
+        requirements: tuple[str, ...] = ()
+        uncertain_python = False
+        if Ecosystem.PYTHON in missing:
+            requirements = tuple(
+                item.path
+                for item in observations
+                if PurePosixPath(item.path).name.lower().startswith("requirements")
+                and PurePosixPath(item.path).suffix.lower() == ".txt"
+            )
+            pin_status, pinned_names = _requirements_pins(context, requirements)
+            if pin_status == "pinned" and _pins_cover_python_manifests(
+                context, observations, requirements, pinned_names
+            ):
+                pinned_paths = requirements
+                missing.remove(Ecosystem.PYTHON)
+            elif requirements and pin_status == "unsupported":
+                # A separate project/Pipfile still establishes an applicable missing lock.
+                uncertain_python = all(
+                    item.path in requirements
+                    for item in observations
+                    if item.ecosystem == Ecosystem.PYTHON
+                )
+                if uncertain_python:
+                    missing.remove(Ecosystem.PYTHON)
+        uncertainty_evidence = tuple(
+            static_evidence(
+                self.spec,
+                "Requirements pinning is unsupported by the bounded exact-pin check.",
+                source=path,
+                details={"ecosystem": "python", "evidence_kind": "unsupported"},
+            )
+            for path in requirements
+            if uncertain_python
+        )
         if missing:
             evidence = tuple(
                 static_evidence(
@@ -411,7 +544,7 @@ class LockfilePresenceCheck(BaseCheck):
                     message="One or more recognized dependency ecosystems have no lockfile.",
                     assessment=Assessment.FAIL,
                     state=ResultState.STATIC_FAIL,
-                    evidence=evidence,
+                    evidence=evidence + uncertainty_evidence,
                     remediation=(
                         "Commit the lockfile produced by the ecosystem's supported "
                         "dependency manager."
@@ -422,12 +555,38 @@ class LockfilePresenceCheck(BaseCheck):
         evidence_items = tuple(
             static_evidence(self.spec, "Recognized lockfile detected.", source=path)
             for path in present
+        ) + tuple(
+            static_evidence(
+                self.spec,
+                "Exact requirements pins detected; transitive closure is not verified.",
+                source=path,
+                details={"ecosystem": "python", "evidence_kind": "exact-requirements-pins"},
+            )
+            for path in pinned_paths
         )
+        if uncertain_python:
+            return (
+                make_finding(
+                    self.spec,
+                    title="Python dependency pinning cannot be assessed",
+                    message="Requirements use declarations outside the bounded exact-pin check.",
+                    assessment=Assessment.UNKNOWN if present else Assessment.UNSUPPORTED,
+                    state=ResultState.NOT_VERIFIED,
+                    evidence=evidence_items + uncertainty_evidence,
+                    ecosystems=ecosystems,
+                    applicability_reason=(
+                        "Requirements includes, URLs, or empty files do not establish pinning."
+                    ),
+                ),
+            )
         return (
             make_finding(
                 self.spec,
-                title="Dependency lockfile detected",
-                message="Each recognized dependency manifest ecosystem has a known lockfile.",
+                title="Dependency lockfile or exact pins detected",
+                message=(
+                    "Each applicable dependency ecosystem has a recognized lockfile or "
+                    "exact requirements pins; dependency graph completeness is not verified."
+                ),
                 assessment=Assessment.INFO,
                 state=ResultState.PRESENT,
                 evidence=evidence_items,

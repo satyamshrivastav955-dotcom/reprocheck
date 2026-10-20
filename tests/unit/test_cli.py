@@ -20,10 +20,12 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("R E P R O C H E C K", output.getvalue())
-        self.assertIn("GET STARTED", output.getvalue())
+        self.assertIn("START HERE", output.getvalue())
+        self.assertIn("Passing tests does not prove reproducibility.", output.getvalue())
         self.assertIn("reprocheck scan .", output.getvalue())
         self.assertIn("reprocheck verify . --profile python-uv --backend docker", output.getvalue())
-        self.assertIn("reprocheck receipt --help", output.getvalue())
+        self.assertIn("reprocheck receipt validate FILE", output.getvalue())
+        self.assertIn("reprocheck --help", output.getvalue())
         self.assertEqual(errors.getvalue(), "")
         self.assertNotIn("usage:", output.getvalue().lower())
         self.assertNotIn("\x1b[", output.getvalue())
@@ -33,19 +35,21 @@ class CliTests(unittest.TestCase):
         wide_lines = wide.splitlines()
         self.assertTrue(all(ord(character) < 128 for character in wide))
         wide_start_index = next(
-            index for index, line in enumerate(wide_lines) if "GET STARTED" in line
+            index for index, line in enumerate(wide_lines) if "START HERE" in line
         )
         self.assertIn("> reprocheck scan .", wide_lines[wide_start_index + 1])
         self.assertLessEqual(max(map(len, wide_lines)), 140)
 
         narrow = render_welcome("0.1.0", color=False, width=80)
         narrow_lines = narrow.splitlines()
-        self.assertTrue(any("GET STARTED" in line for line in narrow_lines))
+        self.assertTrue(any("START HERE" in line for line in narrow_lines))
         self.assertTrue(any("Repro" in line or "####" in line for line in narrow_lines))
         narrow_start_index = next(
-            index for index, line in enumerate(narrow_lines) if "GET STARTED" in line
+            index for index, line in enumerate(narrow_lines) if "START HERE" in line
         )
-        self.assertGreater(narrow_start_index, wide_start_index)
+        self.assertLess(narrow_start_index, 16)
+        self.assertLess(wide_start_index, 16)
+        self.assertGreater(len(narrow_lines), len(wide_lines))
         self.assertLessEqual(max(map(len, narrow_lines)), 80)
 
     def test_help_and_version_do_not_include_welcome(self) -> None:
@@ -53,12 +57,24 @@ class CliTests(unittest.TestCase):
             ["--help"],
             ["scan", "--help"],
             ["verify", "--help"],
+            ["experiment", "--help"],
             ["receipt", "--help"],
+            ["receipt", "validate", "--help"],
+            ["receipt", "compare", "--help"],
         ):
             output = io.StringIO()
-            with redirect_stdout(output), redirect_stderr(io.StringIO()):
-                main(arguments)
-            self.assertNotIn("GET STARTED", output.getvalue())
+            with (
+                redirect_stdout(output),
+                redirect_stderr(io.StringIO()),
+                patch("reprocheck.cli.scan_repository") as scan,
+                patch("reprocheck.cli.verify_repository") as verify,
+                patch("reprocheck.cli.experiment_repository") as experiment,
+                patch("reprocheck.cli._receipt_command") as receipt,
+            ):
+                self.assertEqual(main(arguments), 0)
+            for action in (scan, verify, experiment, receipt):
+                action.assert_not_called()
+            self.assertNotIn("START HERE", output.getvalue())
 
         verify_help = io.StringIO()
         with redirect_stdout(verify_help), redirect_stderr(io.StringIO()):
@@ -70,7 +86,7 @@ class CliTests(unittest.TestCase):
         with redirect_stdout(version):
             main(["--version"])
         self.assertEqual(version.getvalue(), "reprocheck 0.1.0\n")
-        self.assertNotIn("GET STARTED", version.getvalue())
+        self.assertNotIn("START HERE", version.getvalue())
 
     def test_no_color_disables_welcome_ansi_for_a_tty(self) -> None:
         class TTYBuffer(io.StringIO):

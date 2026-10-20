@@ -9,7 +9,6 @@ top of the same deterministic plain-text layout.
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import sys
 import textwrap
@@ -21,19 +20,12 @@ _WHITE = "\x1b[97m"
 _MUTED = "\x1b[90m"
 _CYAN = "\x1b[96m"
 _GREEN = "\x1b[92m"
-_RED = "\x1b[91m"
 _BLUE = "\x1b[94m"
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
-_TAGLINE = "Repository verification. Evidence, not guesses."
-_WORKFLOW = ("SCAN", "ISOLATE", "REPRODUCE", "VERIFY", "EVIDENCE")
-_COMMANDS = (
-    ("reprocheck scan .", "Inspect the repository without executing it."),
-    (
-        "reprocheck verify . --profile python-uv --backend docker",
-        "Review the verification plan; add --approve to execute.",
-    ),
-    ("reprocheck receipt --help", "Validate and compare evidence receipts."),
+_MESSAGE = "Passing tests does not prove reproducibility."
+_PURPOSE = (
+    "ReproCheck runs controlled experiments in isolated environments, compares selected "
+    "artifacts, and records the evidence."
 )
 
 # A compact five-row ASCII lockup is the closest portable equivalent to a
@@ -57,10 +49,6 @@ def _paint(value: str, code: str, *, enabled: bool) -> str:
     if not enabled or not value or not code:
         return value
     return f"{code}{value}{_RESET}"
-
-
-def _visible_width(value: str) -> int:
-    return len(_ANSI_RE.sub("", value))
 
 
 def _fit(value: str, width: int) -> str:
@@ -151,26 +139,6 @@ def _wordmark(width: int, *, enabled: bool) -> list[str]:
     ]
 
 
-def _workflow_lines(width: int, *, enabled: bool) -> list[str]:
-    lines: list[str] = []
-    current = ""
-    for label in _WORKFLOW:
-        candidate = label if not current else f"{current}  |  {label}"
-        if current and len(candidate) > width:
-            lines.append(current)
-            current = label
-        else:
-            current = candidate
-    if current:
-        lines.append(current)
-
-    rendered: list[str] = []
-    for line in lines:
-        pieces = line.split("  |  ")
-        rendered.append("  |  ".join(_paint(piece, _WHITE, enabled=enabled) for piece in pieces))
-    return rendered
-
-
 def _style_command(value: str, *, enabled: bool) -> str:
     parts = value.split(" ", 2)
     if len(parts) < 2 or parts[0] != "reprocheck":
@@ -219,121 +187,86 @@ def _panel_command_lines(command: str, inner_width: int, *, enabled: bool) -> li
 def _panel_rows(panel_width: int, *, enabled: bool) -> list[str]:
     inner = max(1, panel_width - 2)
     border = _paint("+" + "-" * inner + "+", _MUTED, enabled=enabled)
-    rows = [border, _panel_line("  GET STARTED", inner, enabled=enabled, style=_WHITE)]
-    for index, (command, description) in enumerate(_COMMANDS):
-        rows.extend(_panel_command_lines(command, inner, enabled=enabled))
-        for description_line in _wrap(description, max(1, inner - 4)):
-            rows.append(
-                _panel_line("    " + description_line, inner, enabled=enabled, style=_MUTED)
-            )
-        if index < len(_COMMANDS) - 1:
-            rows.append(_panel_line("-" * inner, inner, enabled=enabled, style=_MUTED))
+    rows = [border, _panel_line("  START HERE", inner, enabled=enabled, style=_GREEN)]
+    rows.extend(_panel_command_lines("reprocheck scan .", inner, enabled=enabled))
+    for line in _wrap("Read-only: inspect the repository without executing it.", max(1, inner - 4)):
+        rows.append(_panel_line("    " + line, inner, enabled=enabled, style=_MUTED))
     rows.append(border)
     return rows
 
 
-def _step_rows(*, enabled: bool, width: int | None = None) -> list[str]:
-    steps = (
-        ("[<>]", "ANALYZE", "Inspect the repository without execution.", _CYAN),
-        ("[{}]", "REPRODUCE", "Build and test in an isolated environment.", _BLUE),
-        ("[#]", "VERIFY", "Generate cryptographic evidence.", _GREEN),
+def _workflow_rows(width: int, *, enabled: bool) -> list[str]:
+    rows = [_paint(line, _BLUE, enabled=enabled) for line in _wrap("WORKFLOW REFERENCE", width)]
+    notes = (
+        "Python/uv example; choose a supported profile for your repository.",
+        "Docker is required for these commands; no silent host fallback.",
     )
-    rows: list[str] = []
-    for index, (icon, title, description, accent) in enumerate(steps, start=1):
-        rows.append(
-            "  "
-            + _paint(f"0{index}", _MUTED, enabled=enabled)
-            + "  "
-            + _paint(icon, accent, enabled=enabled)
-            + "  "
-            + _paint(title, accent, enabled=enabled)
+    for note in notes:
+        rows.extend(_paint(line, _MUTED, enabled=enabled) for line in _wrap(note, width))
+    commands = (
+        (
+            "Review the plan without execution; rerun with --approve only after review:",
+            "reprocheck verify . --profile python-uv --backend docker",
+        ),
+        (
+            "Compare two independent runs and selected files/directories (--artifact). "
+            "Preview without --approve, then explicitly approve both runs:",
+            "reprocheck experiment . --profile python-uv --backend docker "
+            "--artifact PATH --approve --receipt FILE",
+        ),
+        (
+            "Validate receipt integrity; open FILE for JSON run outcomes and artifact hashes:",
+            "reprocheck receipt validate FILE",
+        ),
+    )
+    for description, command in commands:
+        rows.append("")
+        rows.extend(_paint(line, _MUTED, enabled=enabled) for line in _wrap(description, width))
+        rows.extend(
+            "  " + _style_command(line, enabled=enabled) for line in _wrap(command, width - 2)
         )
-        description_width = max(1, (width or len(description) + 7) - 7)
-        description_lines = _wrap(description, description_width)
-        rows.extend("       " + _paint(line, _MUTED, enabled=enabled) for line in description_lines)
-        if index < len(steps):
-            rows.append("       " + _paint("|", _MUTED, enabled=enabled))
     return rows
 
 
 def _footer(width: int, *, enabled: bool) -> list[str]:
-    rule = _paint("-" * width, _MUTED, enabled=enabled)
-    message_left = "Your repository works here."
-    message_right = "Prove it can be reproduced."
-    docs = "README.md + docs/"
-    if width >= len(message_left) + len(message_right) + len(docs) + 8:
-        gap = width - len(message_left) - 1 - len(message_right) - len(docs)
-        message = (
-            _paint(message_left, _WHITE, enabled=enabled)
-            + " "
-            + _paint(message_right, _RED, enabled=enabled)
-            + " " * gap
-            + _paint(docs, _MUTED, enabled=enabled)
-        )
-        return [rule, message]
-    if width >= len(message_left) + len(message_right) + 1:
-        return [
-            rule,
-            _paint(message_left, _WHITE, enabled=enabled)
-            + " "
-            + _paint(message_right, _RED, enabled=enabled),
-        ]
-    return [
-        rule,
-        *(_paint(line, _WHITE, enabled=enabled) for line in _wrap(message_left, width)),
-        *(_paint(line, _RED, enabled=enabled) for line in _wrap(message_right, width)),
-    ]
+    notes = (
+        "Advanced: reprocheck --help; reprocheck receipt compare FIRST SECOND",
+        "Drift demo: docs/reproducibility-drift-demo.md",
+        "Expected: both runs pass; selected artifacts differ: drift_detected. "
+        "Reproducibility not established; inspect the receipt for evidence.",
+        "Results apply to recorded conditions only. Receipt integrity is not producer trust.",
+    )
+    return [_paint(line, _MUTED, enabled=enabled) for note in notes for line in _wrap(note, width)]
+
+
+def _content_rows(version: str, width: int, *, enabled: bool) -> list[str]:
+    rows = [_header(version, width, enabled=enabled), ""]
+    rows.extend(_wordmark(width, enabled=enabled))
+    rows.extend(_paint(line, _WHITE, enabled=enabled) for line in _wrap(_MESSAGE, width))
+    rows.extend(_paint(line, _MUTED, enabled=enabled) for line in _wrap(_PURPOSE, width))
+    rows.append("")
+    rows.extend(_panel_rows(width, enabled=enabled))
+    rows.append("")
+    rows.extend(_workflow_rows(width, enabled=enabled))
+    rows.append("")
+    rows.extend(_footer(width, enabled=enabled))
+    return rows
 
 
 def _wide_layout(version: str, *, enabled: bool, terminal_width: int) -> str:
     content_width = min(148, max(108, terminal_width - 8))
     margin = max(0, (terminal_width - content_width) // 2)
     indent = " " * margin
-    left_width = max(40, int(content_width * 0.40))
-    gap = 4
-    panel_width = content_width - left_width - gap
-    left = _step_rows(enabled=enabled, width=left_width)
-    right = _panel_rows(panel_width, enabled=enabled)
-
-    lines = [
-        indent + _header(version, content_width, enabled=enabled),
-        "",
-        *(indent + "  " + line for line in _wordmark(content_width - 2, enabled=enabled)),
-        indent + "  " + _paint(_TAGLINE, _WHITE, enabled=enabled),
-        "",
-        *(indent + "  " + line for line in _workflow_lines(content_width - 2, enabled=enabled)),
-        "",
-    ]
-    for index in range(max(len(left), len(right))):
-        left_line = left[index] if index < len(left) else ""
-        right_line = right[index] if index < len(right) else ""
-        padding = " " * max(1, left_width - _visible_width(left_line))
-        lines.append(indent + left_line + padding + " " * gap + right_line)
-    lines.extend("" for _ in range(1))
-    lines.extend(indent + line for line in _footer(content_width, enabled=enabled))
-    return "\n".join(lines) + "\n"
+    rows = _content_rows(version, content_width, enabled=enabled)
+    return "\n".join(indent + row if row else "" for row in rows) + "\n"
 
 
 def _compact_layout(version: str, *, enabled: bool, terminal_width: int) -> str:
     content_width = max(16, terminal_width - 4)
     indent = "  " if terminal_width >= 32 else ""
     usable = max(8, content_width - len(indent))
-    lines = [indent + _header(version, usable, enabled=enabled), ""]
-    lines.extend(indent + line for line in _wordmark(usable, enabled=enabled))
-    lines.extend(indent + _paint(line, _MUTED, enabled=enabled) for line in _wrap(_TAGLINE, usable))
-    lines.extend(("", *(indent + line for line in _workflow_lines(usable, enabled=enabled)), ""))
-
-    for step_line in _step_rows(enabled=enabled, width=usable):
-        if _visible_width(step_line) <= usable:
-            lines.append(indent + step_line)
-        else:
-            lines.extend(indent + line for line in _wrap(_ANSI_RE.sub("", step_line), usable))
-    lines.append("")
-    panel_width = usable
-    panel = _panel_rows(panel_width, enabled=enabled)
-    lines.extend(indent + line for line in panel)
-    lines.extend(indent + line for line in _footer(usable, enabled=enabled))
-    return "\n".join(lines) + "\n"
+    rows = _content_rows(version, usable, enabled=enabled)
+    return "\n".join(indent + row if row else "" for row in rows) + "\n"
 
 
 def render_welcome(

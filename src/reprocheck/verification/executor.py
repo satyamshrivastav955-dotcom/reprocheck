@@ -27,7 +27,7 @@ from ..models import (
     VerificationClass,
     VerificationRun,
 )
-from .planner import PlannedCommand, VerificationPlan
+from .planner import PlannedCommand, PlanPhase, VerificationPlan
 from .redaction import bounded_redact
 from .workspace import WorkspaceError, materialize_workspace
 
@@ -98,12 +98,25 @@ def _is_allowed_name(name: str, allowlist: frozenset[str]) -> bool:
     return name in allowlist and not _SECRET_ENV_RE.search(name)
 
 
-def _container_environment(environment: Mapping[str, str]) -> dict[str, str]:
-    """Keep host platform variables out of Docker ``--env`` arguments."""
+def _container_environment(
+    environment: Mapping[str, str], *, profile: str | None = None
+) -> dict[str, str]:
+    """Filter host platform variables, then apply trusted Docker profile controls."""
 
-    return {
+    container_environment = {
         name: value for name, value in environment.items() if name not in _CONTAINER_HOST_ENV_NAMES
     }
+    if profile == "python-pip-editable":
+        # Each phase gets a fresh container; only the per-run workspace persists.
+        container_environment.update(
+            {
+                "PYTHONUSERBASE": "/workspace/.reprocheck-python",
+                "PIP_USER": "1",
+                "PATH": "/workspace/.reprocheck-python/bin:/usr/local/bin:/usr/local/sbin:"
+                "/usr/sbin:/usr/bin:/sbin:/bin",
+            }
+        )
+    return container_environment
 
 
 def _is_docker_startup_error(stderr: str) -> bool:
@@ -354,6 +367,27 @@ def _phase_class(planned: PlannedCommand) -> VerificationClass:
     return VerificationClass.COMMAND
 
 
+def _executed_check_id(plan: VerificationPlan, planned: PlannedCommand) -> str | None:
+    """Attribute only recognized profile test/build execution, never acquisition.
+
+    RC-CMD-001 owns the runnable-command evidence. Executing a command cannot
+    verify documentation parity, dependency locking, CI setup, or portability.
+    """
+
+    if planned.phase is not PlanPhase.VERIFICATION:
+        return None
+    argv = planned.argv
+    if plan.profile == "python-uv" and argv[:2] == ("uv", "run"):
+        argv = argv[2:]
+    elif plan.profile not in {"python-pip-editable", "node-npm"}:
+        return None
+    if argv[:3] in {("python", "-m", "pytest"), ("python", "-m", "unittest")}:
+        return "RC-CMD-001"
+    if plan.profile == "node-npm" and argv in {("npm", "test"), ("npm", "run", "build")}:
+        return "RC-CMD-001"
+    return None
+
+
 @dataclass(frozen=True)
 class ExecutionResult:
     """Complete result of one plan execution or policy decision."""
@@ -502,7 +536,7 @@ class SubprocessExecutor:
         effective_run_id = run_id or f"{plan.profile}-run"
         safe_environment = sanitize_environment(allowlist=self.environment_allowlist)
         environment = _environment_fingerprint(
-            _container_environment(safe_environment)
+            _container_environment(safe_environment, profile=plan.profile)
             if self.backend == "docker"
             else safe_environment,
             self.backend,
@@ -548,10 +582,17 @@ class SubprocessExecutor:
             limitations.add(
                 "Docker execution is backend-isolated, but sandbox completeness is not claimed."
             )
-            limitations.add(
-                "Host platform environment variables, including PATH, were not forwarded into "
-                "the container; image defaults are used."
-            )
+            if plan.profile == "python-pip-editable":
+                limitations.add(
+                    "Host platform environment variables, including PATH, were not forwarded into "
+                    "the container; python-pip-editable uses a profile-controlled workspace Python "
+                    "user-base and PATH. Persistence depends on image Python user-site support."
+                )
+            else:
+                limitations.add(
+                    "Host platform environment variables, including PATH, were not forwarded into "
+                    "the container; image defaults are used."
+                )
         _, resource_limitations = _resource_preexec(
             cpu_seconds=self.cpu_seconds,
             address_space_bytes=self.address_space_bytes,
@@ -571,7 +612,7 @@ class SubprocessExecutor:
                     command_environment, env_limitations = self._environment(command)
                     limitations.update(env_limitations)
                     container_environment = (
-                        _container_environment(command_environment)
+                        _container_environment(command_environment, profile=plan.profile)
                         if self.backend == "docker"
                         else command_environment
                     )
@@ -658,6 +699,7 @@ class SubprocessExecutor:
                     evidence.append(
                         Evidence(
                             id=evidence_id,
+                            check_id=_executed_check_id(plan, planned),
                             verification_class=_phase_class(planned),
                             summary=f"{planned.purpose}: {command_status.value}",
                             details={

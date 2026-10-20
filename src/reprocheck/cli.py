@@ -592,9 +592,15 @@ def _receipt_command(arguments: argparse.Namespace) -> int:
                 print(f"- {error}", file=sys.stderr)
             return 1
         if arguments.receipt_command == "compare":
-            comparison = compare_receipts(
-                load_receipt(Path(arguments.first)), load_receipt(Path(arguments.second))
-            )
+            first = load_receipt(Path(arguments.first))
+            second = load_receipt(Path(arguments.second))
+            for label, receipt in (("first", first), ("second", second)):
+                validation = validate_receipt(receipt)
+                if not validation.valid:
+                    raise ReceiptFormatError(
+                        f"{label} receipt integrity is invalid: " + "; ".join(validation.errors)
+                    )
+            comparison = compare_receipts(first, second)
             print("equal" if comparison.equal else "changed")
             for category in comparison.changed:
                 print(f"- {category}")

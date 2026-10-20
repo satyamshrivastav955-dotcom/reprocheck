@@ -8,11 +8,21 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+from ...command_analysis import (
+    MAKE_DEFAULT_POLICY,
+    CommandLeaf,
+    CommandLine,
+    analyze_command,
+    literal_tokens,
+    readme_command_lines,
+    workflow_jobs,
+)
 from ...models import (
     Assessment,
     CheckCategory,
     CheckSpec,
     Finding,
+    JSONValue,
     ResultState,
     Severity,
     VerificationClass,
@@ -25,6 +35,7 @@ from ..base import (
     make_finding,
     parse_error_finding,
     read_known_text,
+    redact_excerpt,
     static_evidence,
     top_level_paths,
     unsupported_finding,
@@ -37,43 +48,95 @@ class CommandObservation:
     intents: frozenset[str]
     families: frozenset[str]
     excerpt: str
-
-
-_TEST_PATTERNS: tuple[tuple[str, str], ...] = (
-    (r"\b(?:python(?:\s+-m)?\s+)?(?:pytest|tox|nox)\b", "python"),
-    (r"\b(?:npm|yarn|pnpm)\s+(?:run\s+)?test\b", "node"),
-    (r"\bcargo\s+test\b", "rust"),
-    (r"\bgo\s+test\b", "go"),
-    (r"\bdotnet\s+test\b", "dotnet"),
-    (r"\b(?:mvn|gradle)\s+test\b", "java"),
-    (r"\bmake\s+test\b", "script"),
-)
-_BUILD_PATTERNS: tuple[tuple[str, str], ...] = (
-    (r"\b(?:python\s+-m\s+build|uv\s+build)\b", "python"),
-    (r"\b(?:npm|yarn|pnpm)\s+(?:run\s+)?build\b", "node"),
-    (r"\bcargo\s+build\b", "rust"),
-    (r"\bgo\s+build\b", "go"),
-    (r"\bdotnet\s+build\b", "dotnet"),
-    (r"\b(?:mvn\s+package|gradle\s+build)\b", "java"),
-    (r"\bmake\s+build\b", "script"),
-    (r"\bdocker\s+build\b", "container"),
-)
+    line: int | None = None
+    commands: tuple[tuple[str, ...], ...] = ()
+    resolved: tuple[CommandLeaf, ...] = ()
+    reason: str | None = None
 
 
 def classify_command_text(text: str) -> tuple[frozenset[str], frozenset[str], str]:
-    """Classify known test/build command forms without parsing or executing shell."""
+    """Classify literal command lines; arbitrary prose is not command evidence."""
+    leaves = analyze_command(text).leaves
+    return (
+        frozenset(leaf.intent for leaf in leaves),
+        frozenset(leaf.family for leaf in leaves),
+        text.strip()[:400],
+    )
 
-    intents: set[str] = set()
-    families: set[str] = set()
-    for pattern, family in _TEST_PATTERNS:
-        if re.search(pattern, text, flags=re.IGNORECASE):
-            intents.add("test")
-            families.add(family)
-    for pattern, family in _BUILD_PATTERNS:
-        if re.search(pattern, text, flags=re.IGNORECASE):
-            intents.add("build")
-            families.add(family)
-    return frozenset(intents), frozenset(families), text.strip()[:400]
+
+def _line_observations(
+    path: str,
+    command: CommandLine,
+    context: CheckContext,
+    wrappers: dict[str, tuple[CommandLeaf, ...]],
+    reason: str | None = None,
+) -> tuple[CommandObservation, ...]:
+    analysis = analyze_command(command.raw, context)
+    leaves = tuple(
+        resolved
+        for leaf in analysis.leaves
+        for resolved in (
+            wrappers.get(leaf.identity[1], (leaf,))
+            if leaf.family == "node" and len(leaf.identity) == 2
+            else (leaf,)
+        )
+    )
+    intents = {leaf.intent for leaf in leaves}
+    if not intents and analysis.reason:
+        # Retain unresolved *invocations*, not mentions of command words in prose.
+        if re.match(
+            r"^(?:make\b|(?:uv run(?: --\w+)* )?"
+            r"(?:pytest|tox|nox|python3? -m (?:pytest|unittest))\b)",
+            command.raw,
+        ):
+            intents.add("build" if re.match(r"make\s+build\b", command.raw) else "test")
+    result: list[CommandObservation] = []
+    for intent in sorted(intents):
+        relevant = tuple(leaf for leaf in leaves if leaf.intent == intent)
+        result.append(
+            CommandObservation(
+                path,
+                frozenset({intent}),
+                frozenset(leaf.family for leaf in relevant),
+                command.raw.strip()[:400],
+                command.line,
+                tuple(leaf.identity for leaf in relevant),
+                relevant,
+                reason or analysis.reason,
+            )
+        )
+    return tuple(result)
+
+
+def _observation_details(observation: CommandObservation) -> dict[str, JSONValue]:
+    details: dict[str, JSONValue] = {
+        "intents": [intent for intent in sorted(observation.intents)],
+        "families": [family for family in sorted(observation.families)],
+        "commands": [
+            [redact_excerpt(value) for value in command] for command in observation.commands
+        ],
+    }
+    if observation.line is not None:
+        details["line"] = observation.line
+    if observation.reason:
+        details["reason"] = redact_excerpt(observation.reason)
+    if any(leaf.source for leaf in observation.resolved):
+        details["resolved"] = [
+            {
+                "source": leaf.source,
+                "line": leaf.line,
+                "target": leaf.target,
+                "command": redact_excerpt(leaf.raw),
+                "make_defaults": {
+                    name: redact_excerpt(value) for name, value in leaf.make_defaults
+                },
+            }
+            for leaf in observation.resolved
+            if leaf.source
+        ]
+    if any(leaf.make_defaults for leaf in observation.resolved):
+        details["make_default_policy"] = MAKE_DEFAULT_POLICY
+    return details
 
 
 def _script_intent(name: str) -> str | None:
@@ -152,6 +215,7 @@ def command_observations(
 
     observations: list[CommandObservation] = []
     errors: list[tuple[str, str, str]] = []
+    wrappers: dict[str, tuple[CommandLeaf, ...]] = {}
     paths = set(top_level_paths(context))
     for path in sorted(paths):
         name = PurePosixPath(path).name.lower()
@@ -170,7 +234,53 @@ def command_observations(
         except (ValueError, json.JSONDecodeError, tomllib.TOMLDecodeError) as error:
             errors.append((path, str(error), "malformed"))
         else:
-            observations.extend(parsed)
+            for observation in parsed:
+                name, _, raw = observation.excerpt.partition(": ")
+                analysis = analyze_command(raw, context)
+                leaves = tuple(
+                    leaf for leaf in analysis.leaves if leaf.intent in observation.intents
+                )
+                if leaves and not analysis.reason:
+                    resolved = tuple(
+                        CommandLeaf(
+                            leaf.intent,
+                            leaf.family,
+                            leaf.identity,
+                            leaf.raw,
+                            path,
+                            target=name,
+                            make_defaults=leaf.make_defaults,
+                        )
+                        for leaf in leaves
+                    )
+                    observations.append(
+                        CommandObservation(
+                            path,
+                            observation.intents,
+                            frozenset(leaf.family for leaf in leaves),
+                            observation.excerpt,
+                            commands=tuple(leaf.identity for leaf in leaves),
+                            resolved=resolved,
+                        )
+                    )
+                    if (
+                        name
+                        and name in {"test", "build", "check", "lint", "typecheck"}
+                        and path == "package.json"
+                    ):
+                        wrappers[name] = resolved
+                else:
+                    observations.append(
+                        CommandObservation(
+                            observation.source,
+                            observation.intents,
+                            observation.families,
+                            observation.excerpt,
+                            reason=analysis.reason
+                            if (raw.strip().startswith("make ") or literal_tokens(raw) is None)
+                            else None,
+                        )
+                    )
 
     for repo_file in sorted(
         (
@@ -184,9 +294,11 @@ def command_observations(
         if result.status != "ok":
             errors.append((repo_file.path, result.error or result.status, result.status))
             continue
-        intents, families, excerpt = classify_command_text(result.text)
-        if intents:
-            observations.append(CommandObservation(repo_file.path, intents, families, excerpt))
+        for job in workflow_jobs(result.text, repo_file.path):
+            for command in job.commands:
+                observations.extend(
+                    _line_observations(repo_file.path, command, context, wrappers, job.reason)
+                )
 
     for repo_file in sorted(
         (
@@ -203,9 +315,8 @@ def command_observations(
         if result.status != "ok":
             errors.append((repo_file.path, result.error or result.status, result.status))
             continue
-        intents, families, excerpt = classify_command_text(result.text)
-        if intents:
-            observations.append(CommandObservation(repo_file.path, intents, families, excerpt))
+        for command in readme_command_lines(result.text):
+            observations.extend(_line_observations(repo_file.path, command, context, wrappers))
 
     return tuple(observations), tuple(errors)
 
@@ -222,8 +333,9 @@ COMMAND_SPEC = CheckSpec(
     severity=Severity.MEDIUM,
     supported_ecosystems=ALL_SUPPORTED_ECOSYSTEMS,
     limitations=(
-        "Commands are classified by patterns only.",
-        "No command is parsed as an executable shell program.",
+        "Only bounded literal commands and root Makefile rules are understood.",
+        "Shell syntax, dynamic Make variables/includes and dynamic workflows are not resolved.",
+        MAKE_DEFAULT_POLICY,
     ),
     false_positive_policy=(
         "A named script or recognized command is evidence of discoverability, not "
@@ -279,15 +391,25 @@ class CommandDiscoverabilityCheck(BaseCheck):
                     ),
                 ),
             )
+        certain = [observation for observation in observations if not observation.reason]
+        if not certain:
+            return (
+                unsupported_finding(
+                    self.spec,
+                    title="Command discoverability is not verifiable",
+                    message="Command invocations exist, but their concrete intent is unresolved.",
+                    reason="; ".join(dict.fromkeys(item.reason or "" for item in observations)),
+                ),
+            )
         evidence = tuple(
             static_evidence(
                 self.spec,
                 "Recognized test/build command source detected.",
                 source=observation.source,
                 excerpt=observation.excerpt,
-                details={"intents": [intent_value for intent_value in sorted(observation.intents)]},
+                details=_observation_details(observation),
             )
-            for observation in observations
+            for observation in certain
         )
         return (
             make_finding(
@@ -316,8 +438,9 @@ CONSISTENCY_SPEC = CheckSpec(
     severity=Severity.MEDIUM,
     supported_ecosystems=ALL_SUPPORTED_ECOSYSTEMS,
     limitations=(
-        "Wrapper scripts are treated as compatible with one concrete command family.",
+        "Wrappers are compared through concrete leaves only when statically established.",
         "Absence in one source is not treated as a contradiction.",
+        MAKE_DEFAULT_POLICY,
     ),
     false_positive_policy=(
         "Report only conflicts between two concrete command families for the same intent."
@@ -356,9 +479,11 @@ class CommandConsistencyCheck(BaseCheck):
         for observation in observations:
             for intent in observation.intents:
                 by_intent.setdefault(intent, []).append(observation)
-        comparable = [
-            items for items in by_intent.values() if len({item.source for item in items}) >= 2
-        ]
+        comparable = {
+            intent: items
+            for intent, items in by_intent.items()
+            if len({item.source for item in items}) >= 2
+        }
         if not comparable:
             return (
                 unsupported_finding(
@@ -374,26 +499,29 @@ class CommandConsistencyCheck(BaseCheck):
                     ),
                 ),
             )
-        conflicts: list[tuple[str, tuple[str, ...]]] = []
-        for intent, items in by_intent.items():
-            families = {
-                family
-                for item in items
-                for family in item.families
-                if family not in {"script", "container"}
-            }
-            if len(families) > 1:
-                conflicts.append((intent, tuple(sorted(families))))
+        conflicts: list[str] = []
+        for intent, items in comparable.items():
+            concrete: dict[str, set[tuple[str, ...]]] = {}
+            for item in items:
+                if item.reason:
+                    continue
+                for leaf in item.resolved:
+                    if leaf.family not in {"script", "container"}:
+                        concrete.setdefault(item.source, set()).add(leaf.identity)
+            sources = sorted(concrete)
+            if any(
+                concrete[left] != concrete[right]
+                for index, left in enumerate(sources)
+                for right in sources[index + 1 :]
+            ):
+                conflicts.append(intent)
         evidence = tuple(
             static_evidence(
                 self.spec,
                 "Recognized command source used for consistency comparison.",
                 source=observation.source,
                 excerpt=observation.excerpt,
-                details={
-                    "intents": [intent_value for intent_value in sorted(observation.intents)],
-                    "families": [family_value for family_value in sorted(observation.families)],
-                },
+                details=_observation_details(observation),
             )
             for observation in observations
         )
@@ -403,8 +531,8 @@ class CommandConsistencyCheck(BaseCheck):
                     self.spec,
                     title="Documented test/build commands are inconsistent",
                     message=(
-                        "Independent sources use different concrete command families "
-                        "for the same intent."
+                        "Independent sources use different concrete runners or targets "
+                        f"for the same intent: {', '.join(conflicts)}."
                     ),
                     assessment=Assessment.WARN,
                     state=ResultState.STATIC_FAIL,
@@ -414,6 +542,21 @@ class CommandConsistencyCheck(BaseCheck):
                         "documented command family."
                     ),
                     code="command-family-conflict",
+                ),
+            )
+        uncertain = [item for items in comparable.values() for item in items if item.reason]
+        if uncertain:
+            return (
+                make_finding(
+                    self.spec,
+                    title="Command consistency is not verifiable",
+                    message="A shared command intent has unresolved wrappers or shell syntax.",
+                    assessment=Assessment.UNSUPPORTED,
+                    state=ResultState.NOT_VERIFIED,
+                    evidence=evidence,
+                    applicability_reason=redact_excerpt(
+                        "; ".join(dict.fromkeys(item.reason or "" for item in uncertain))
+                    ),
                 ),
             )
         return (

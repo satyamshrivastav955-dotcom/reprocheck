@@ -24,6 +24,7 @@ from pathlib import Path, PurePosixPath
 from typing import Final, Iterable, Mapping
 
 from .checks.base import CheckContext, read_known_text
+from .command_analysis import readme_command_lines, workflow_jobs
 from .discovery import discover_repository, resolve_repository_root
 from .models import CommandSpec, DiscoverySummary, JSONValue
 
@@ -207,7 +208,11 @@ def _recognized_spec(tokens: tuple[str, ...], *, source: str) -> tuple[str, Comm
     description = f"Conservative {source} command"
 
     if executable in {"python", "python3"}:
-        if len(args) >= 2 and args[0] == "-m" and args[1].lower() in {"pytest", "tox", "nox"}:
+        if (
+            len(args) >= 2
+            and args[0] == "-m"
+            and args[1].lower() in {"pytest", "unittest", "tox", "nox"}
+        ):
             return "test", _spec(tokens[0], args, description=description)
         if len(args) >= 2 and args[0] == "-m" and args[1].lower() == "build":
             return "build", _spec(tokens[0], args, description=description)
@@ -226,7 +231,7 @@ def _recognized_spec(tokens: tuple[str, ...], *, source: str) -> tuple[str, Comm
                 len(normalized) >= 3
                 and normalized[0].lower() in {"python", "python3"}
                 and normalized[1] == "-m"
-                and normalized[2].lower() in {"pytest", "tox", "nox"}
+                and normalized[2].lower() in {"pytest", "unittest", "tox", "nox"}
             ):
                 return "test", _spec(tokens[0], args, description=description)
         if normalized and normalized[0].lower() == "build":
@@ -418,35 +423,25 @@ def extract_commands(text: str, *, source: str = "text") -> tuple[CommandRecord,
 
 def _readme_candidates(text: str, *, source: str) -> tuple[_Candidate, ...]:
     candidates: list[_Candidate] = []
-    in_fence = False
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if line.startswith("```") or line.startswith("~~~"):
-            in_fence = not in_fence
-            continue
-        snippets = re.findall(r"`([^`\n]+)`", raw_line)
-        if in_fence and line:
-            snippets.append(line)
-        if not snippets:
-            candidate_line = re.sub(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", "", raw_line).strip()
-            if _KNOWN_EXECUTABLE_RE.match(candidate_line) or candidate_line.startswith(
-                ("$ ", "> ")
-            ):
-                snippets.append(candidate_line)
-        for snippet in snippets:
-            candidate = _candidate_from_text(snippet, source=source)
-            if candidate is not None and candidate.intent != "unknown":
-                candidates.append(candidate)
-            elif _intent_hint(snippet) is not None:
-                candidates.append(
-                    _Candidate(
-                        intent=_intent_hint(snippet) or "unknown",
-                        spec=None,
-                        source=source,
-                        raw=snippet.strip()[:400],
-                        reason="README command uses unsupported or unsafe shell syntax",
-                    )
+    for command in readme_command_lines(text):
+        snippet = command.raw
+        candidate = _candidate_from_text(snippet, source=source)
+        if candidate is not None and candidate.intent != "unknown":
+            candidates.append(candidate)
+        elif _intent_hint(snippet) is not None and (
+            _KNOWN_EXECUTABLE_RE.match(snippet)
+            or snippet.startswith(("./", "$ ", "> "))
+            or re.match(r"^[\w./-]+\.(?:sh|ps1|bat)(?:\s|$)", snippet)
+        ):
+            candidates.append(
+                _Candidate(
+                    intent=_intent_hint(snippet) or "unknown",
+                    spec=None,
+                    source=source,
+                    raw=snippet.strip()[:400],
+                    reason="README command uses unsupported or unsafe shell syntax",
                 )
+            )
     return tuple(candidates)
 
 
@@ -543,6 +538,26 @@ def _script_intent(name: str) -> str | None:
 
 def _ci_candidates(text: str, *, source: str) -> tuple[_Candidate, ...]:
     candidates: list[_Candidate] = []
+    if source.lower().startswith(".github/workflows/"):
+        for job in workflow_jobs(text, source):
+            for command in job.commands:
+                for line in command.raw.splitlines():
+                    if not line.strip() or line.lstrip().startswith("#"):
+                        continue
+                    candidate = _candidate_from_text(line, source=source)
+                    if candidate is not None and candidate.intent != "unknown":
+                        candidates.append(candidate)
+                    elif _intent_hint(line) is not None:
+                        candidates.append(
+                            _Candidate(
+                                _intent_hint(line) or "unknown",
+                                None,
+                                source,
+                                line[:400],
+                                "CI command uses unsupported or unsafe shell syntax",
+                            )
+                        )
+        return tuple(candidates)
     block_indent: int | None = None
     for raw_line in text.splitlines():
         indentation = len(raw_line) - len(raw_line.lstrip())

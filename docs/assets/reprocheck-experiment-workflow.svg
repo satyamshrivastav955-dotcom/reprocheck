@@ -1,0 +1,181 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="960" viewBox="0 0 1120 960" role="img" aria-labelledby="workflow-title workflow-desc">
+  <title id="workflow-title">ReproCheck experiment workflow</title>
+  <desc id="workflow-desc">Six stages in snake order: Repository inspection, Plan review, Explicit approval, Isolated execution, Two-run artifact comparison, Evidence receipt. Read 01 to 03 across the top, then 04 to 06 from right to left below. CLI scan discovers, fingerprints, and performs static checks without executing target code. The planner emits argv commands in acquisition and verification phases. No execution occurs before --approve. Docker is the default backend: two independent workspaces use one captured source snapshot. Dependency acquisition may use the network; Docker verification uses --network none. Explicitly selected workspace-relative files or directories are compared through manifests and SHA-256 hashes. The JSON receipt stores runs, artifacts, limitations, and a canonical SHA-256 hash; it is not a signature. Docker workflow shown; host execution is not a sandbox.</desc>
+  <defs>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+      .panel { fill: #1c1b19; stroke: #48433d; stroke-width: 1.25; }
+      .heading { fill: #f4f0e8; font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+      .body { fill: #f4f0e8; font-size: 18px; }
+      .detail { fill: #b7b0a6; font-size: 17px; }
+      .meta { fill: #b7b0a6; font-size: 15px; font-weight: 600; letter-spacing: 1.3px; }
+      .number { fill: #f4f0e8; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .line { fill: none; stroke: #48433d; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+      .flow { fill: none; stroke: #48433d; stroke-width: 2; stroke-linecap: round; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 7 4 1 7" fill="none" stroke="#b7b0a6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="gate-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 7 4 1 7" fill="none" stroke="#e0645a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1120" height="960" fill="#111110"/>
+
+  <!-- Masthead -->
+  <text x="40" y="43" fill="#f4f0e8" font-size="17" font-weight="600" letter-spacing="2">REPROCHECK</text>
+  <text x="1080" y="43" class="meta" text-anchor="end">EXPERIMENT WORKFLOW</text>
+  <text x="40" y="100" fill="#f4f0e8" font-size="38" font-weight="600" letter-spacing="-0.9">From source to evidence.</text>
+  <text x="40" y="134" fill="#b7b0a6" font-size="18">A reviewed plan. Two independent runs. One evidence receipt.</text>
+
+  <!-- Connectors: 01 → 02 → 03 ↓ 04 → 05 → 06 (lower row flows left). -->
+  <g aria-hidden="true">
+    <path class="flow" d="M368 336h24"/>
+    <path class="flow" d="M728 336h24"/>
+    <path d="M920 505v46" fill="none" stroke="#e0645a" stroke-width="2" stroke-linecap="round" marker-end="url(#gate-arrow)"/>
+    <path class="flow" d="M752 720h-24"/>
+    <path class="flow" d="M392 720h-24"/>
+  </g>
+
+  <!-- 01 · Repository inspection -->
+  <g id="stage-01" transform="translate(40 176)">
+    <rect class="panel" width="320" height="320" rx="14"/>
+    <text x="24" y="40" class="number">01</text>
+    <path d="M58 34h24" class="line"/>
+    <text x="296" y="40" class="meta" text-anchor="end">CLI SCAN</text>
+    <text x="24" y="80" class="heading">Repository inspection</text>
+
+    <g aria-hidden="true" class="line">
+      <path d="M28 121h16l6 6h25v26H28z"/>
+      <path d="M37 161v42h38M37 181h38"/>
+      <rect x="68" y="175" width="12" height="12" rx="2" fill="#1c1b19"/>
+      <rect x="68" y="197" width="12" height="12" rx="2" fill="#1c1b19"/>
+      <path d="M38 138h27"/>
+    </g>
+    <text x="101" y="138" class="body">Discover</text>
+    <text x="101" y="173" class="body">Fingerprint</text>
+    <text x="101" y="208" class="body">Static checks</text>
+
+    <path d="M24 244h272" class="line"/>
+    <text x="24" y="274" class="detail">Target code is never</text>
+    <text x="24" y="298" class="detail">executed by scan.</text>
+  </g>
+
+  <!-- 02 · Plan review -->
+  <g id="stage-02" transform="translate(400 176)">
+    <rect class="panel" width="320" height="320" rx="14"/>
+    <text x="24" y="40" class="number">02</text>
+    <path d="M58 34h24" class="line"/>
+    <text x="296" y="40" class="meta" text-anchor="end">[ ARGV ]</text>
+    <text x="24" y="80" class="heading">Plan review</text>
+    <text x="24" y="121" class="detail">Planner emits argv</text>
+
+    <rect x="24" y="144" width="272" height="44" rx="7" fill="#111110" stroke="#48433d"/>
+    <text x="42" y="172" fill="#b7b0a6" font-size="16" font-weight="600">A</text>
+    <path d="M68 155v22" class="line"/>
+    <text x="84" y="172" class="body">acquisition</text>
+    <path d="M48 189v14" class="line"/>
+    <rect x="24" y="204" width="272" height="44" rx="7" fill="#111110" stroke="#48433d"/>
+    <text x="42" y="232" fill="#b7b0a6" font-size="16" font-weight="600">V</text>
+    <path d="M68 215v22" class="line"/>
+    <text x="84" y="232" class="body">verification</text>
+
+    <text x="24" y="290" class="detail">Review phases + network use</text>
+  </g>
+
+  <!-- 03 · Explicit approval gates execution. -->
+  <g id="stage-03" transform="translate(760 176)">
+    <rect width="320" height="320" rx="14" fill="#1c1b19" stroke="#e0645a" stroke-width="2"/>
+    <text x="24" y="40" class="number" style="fill: #e0645a">03</text>
+    <path d="M58 34h24" fill="none" stroke="#e0645a" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="296" y="40" class="meta" text-anchor="end" style="fill: #e0645a">REQUIRED</text>
+    <text x="24" y="80" class="heading">Explicit approval</text>
+
+    <rect x="24" y="119" width="272" height="70" rx="8" fill="#111110" stroke="#e0645a"/>
+    <g aria-hidden="true" fill="none" stroke="#e0645a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="45" y="149" width="18" height="16" rx="3"/>
+      <path d="M49 149v-6a5 5 0 0 1 10 0v6M54 156v3"/>
+    </g>
+    <text x="86" y="164" fill="#e0645a" font-size="27" font-weight="600" letter-spacing="0.3">--approve</text>
+
+    <text x="24" y="226" class="body">No execution before</text>
+    <text x="24" y="252" class="body">--approve.</text>
+    <path d="M24 279h16m-12-5v10m7-10v10" fill="none" stroke="#e0645a" stroke-width="1.5"/>
+    <text x="52" y="286" class="detail">Approve both runs</text>
+  </g>
+
+  <!-- 04 · The lower row starts at the right and continues left. -->
+  <g id="stage-04" transform="translate(760 560)">
+    <rect class="panel" width="320" height="320" rx="14"/>
+    <text x="24" y="40" class="number">04</text>
+    <path d="M58 34h24" class="line"/>
+    <text x="296" y="40" class="meta" text-anchor="end">DOCKER · DEFAULT</text>
+    <text x="24" y="80" class="heading">Isolated execution</text>
+    <text x="24" y="117" class="detail">One captured source snapshot</text>
+
+    <rect x="110" y="135" width="100" height="32" rx="6" fill="#111110" stroke="#48433d"/>
+    <text x="160" y="157" fill="#f4f0e8" font-size="16" text-anchor="middle">source</text>
+    <g aria-hidden="true" class="line">
+      <path d="M160 167v12M88 191v-12h144v12"/>
+    </g>
+    <rect x="24" y="192" width="128" height="43" rx="7" fill="#111110" stroke="#48433d"/>
+    <rect x="168" y="192" width="128" height="43" rx="7" fill="#111110" stroke="#48433d"/>
+    <text x="88" y="219" class="body" text-anchor="middle">Run 1</text>
+    <text x="232" y="219" class="body" text-anchor="middle">Run 2</text>
+    <text x="160" y="259" fill="#f4f0e8" font-size="17" text-anchor="middle">Independent workspaces</text>
+
+    <text x="24" y="284" class="detail">Acquisition · may use network</text>
+    <text x="24" y="308" class="detail">Verification · --network none</text>
+  </g>
+
+  <!-- 05 · Compare selected output, not an implicit workspace glob. -->
+  <g id="stage-05" transform="translate(400 560)">
+    <rect class="panel" width="320" height="320" rx="14"/>
+    <text x="24" y="40" class="number">05</text>
+    <path d="M58 34h24" class="line"/>
+    <text x="296" y="40" class="meta" text-anchor="end">SHA-256</text>
+    <text class="heading">
+      <tspan x="24" y="80">Two-run artifact</tspan>
+      <tspan x="24" y="107">comparison</tspan>
+    </text>
+
+    <text x="24" y="145" class="detail">Explicitly select files/directories</text>
+    <text x="24" y="169" class="detail">Workspace-relative paths</text>
+    <rect x="24" y="193" width="100" height="43" rx="7" fill="#111110" stroke="#48433d"/>
+    <rect x="196" y="193" width="100" height="43" rx="7" fill="#111110" stroke="#48433d"/>
+    <text x="74" y="220" fill="#f4f0e8" font-size="17" text-anchor="middle">Run 1</text>
+    <text x="246" y="220" fill="#f4f0e8" font-size="17" text-anchor="middle">Run 2</text>
+    <g aria-hidden="true" class="line">
+      <path d="M124 214h26m20 0h26"/>
+      <path d="m160 204 10 10-10 10-10-10z"/>
+    </g>
+    <text x="24" y="270" class="body" style="font-size: 17px">Compare manifests + SHA-256</text>
+    <text x="24" y="298" class="detail">Paths · sizes · content hashes</text>
+  </g>
+
+  <!-- 06 · A portable evidence record, with a hash rather than a signature. -->
+  <g id="stage-06" transform="translate(40 560)">
+    <rect class="panel" width="320" height="320" rx="14"/>
+    <text x="24" y="40" class="number">06</text>
+    <path d="M58 34h24" class="line"/>
+    <text x="296" y="40" class="meta" text-anchor="end">JSON</text>
+    <text x="24" y="80" class="heading">Evidence receipt</text>
+
+    <rect x="24" y="111" width="272" height="118" rx="8" fill="#111110" stroke="#48433d"/>
+    <g aria-hidden="true" class="line">
+      <path d="M53 131h-6v32l-6 7 6 7v32h6"/>
+      <path d="M261 131h6v32l6 7-6 7v32h-6"/>
+    </g>
+    <text x="77" y="143" class="body">runs</text>
+    <text x="77" y="176" class="body">artifacts</text>
+    <text x="77" y="209" class="body">limitations</text>
+
+    <text x="24" y="269" class="body">Canonical SHA-256 hash</text>
+    <text x="24" y="298" class="detail">Integrity hash, not a signature.</text>
+  </g>
+
+  <path d="M40 908h1040" class="line"/>
+  <circle cx="45" cy="933" r="3" fill="#e0645a" aria-hidden="true"/>
+  <text x="60" y="939" fill="#b7b0a6" font-size="16">Docker workflow shown · host execution is not a sandbox</text>
+</svg>

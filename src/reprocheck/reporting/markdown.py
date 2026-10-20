@@ -45,6 +45,13 @@ def _render_score(score: ScoreSummary) -> list[str]:
         )
     if not score.applicable_groups:
         lines.append("| (none) | 0 | 0 |")
+    if score.verified_group_scores:
+        lines.extend(["", "| Group | Verified score | Weight |", "| --- | ---: | ---: |"])
+        for group in score.applicable_groups:
+            lines.append(
+                f"| `{group}` | {_score_value(score.verified_group_scores[group])} | "
+                f"{SCORING_GROUP_WEIGHTS[group]} |"
+            )
     return lines
 
 

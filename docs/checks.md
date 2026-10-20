@@ -36,5 +36,48 @@ ordered deterministically and use relative repository paths in evidence.
 
 The static readiness score and verified execution score are independent. A
 successful executed command does not promote unrelated static findings to
-`VERIFIED_PASS`; `verified_score: 0/<applicable weight>` means the run exists but
-no individual scoring-group findings were verified by that run.
+`VERIFIED_PASS`. Supported profile test/build execution is explicitly attributed
+to `RC-CMD-001` by its check ID, verification phase, actual command outcome, and
+membership in the run's evidence IDs. This can earn the commands group (15
+points) only; it cannot establish documentation parity (`RC-CMD-002`), lockfile
+integrity, CI correctness, or portability. All command runs in a report must
+provide passing linked verification evidence for that positive contribution.
+
+The static score still uses the original static findings, even when commands
+execute successfully. The verified denominator is the same applicable-group
+weight, not just the tested groups; unverified groups score zero with explicit
+limitations. A `0/<applicable weight>` verified score can therefore mean failed,
+unlinked, acquisition-only, denied, or incomplete execution evidence. Older
+receipts without explicit check attribution remain valid but do not receive
+retroactively inferred credit. Neither score establishes artifact equality.
+
+## Bounded workflow and applicability rules
+
+- CI coverage reads recognizable GitHub job steps, not workflow names, comments,
+  or action input text. Runtime/dependency setup must precede tests in the same
+  job. Checkout alone is not setup evidence. Other providers or complex YAML may
+  remain `NOT_VERIFIED`.
+- Literal root Make targets can delegate to recognized pytest, unittest, npm test,
+  or build commands through bounded prerequisites/recipes. Simple declared
+  variable defaults (`=`, `:=`, `?=`) are supported and recorded in evidence;
+  runtime overrides are not evaluated. Dynamic functions, includes, cycles,
+  shell controls, and unresolved targets remain uncertain. Scanning never runs
+  Make or a workflow.
+- Command consistency compares per-intent command identities and established
+  wrappers across independent sources. Explicitly labeled fallback/alternative
+  snippets are not the canonical workflow. Tables describing supported tool
+  profiles are not project invocations. Genuine divergent runner/target
+  instructions remain conflicts; unresolvable wrappers do not earn a pass.
+- `RC-DEP-002` accepts recognized lock formats (including `pylock.toml`) or
+  bounded exact requirements pins without claiming dependency closure. Ranges,
+  wildcard pins, unrelated dev pins, and missing locks remain visible. A tool-only
+  `pyproject.toml` is not by itself a dependency-lock obligation; no check requires
+  a library to adopt uv specifically.
+- `RC-ENV-001` distinguishes explicit required variables from unknown
+  applicability. No template and no requirements evidence is uncertain, not a
+  pass or an automatic library defect. Required variables missing template/docs
+  entries fail; explicit no-required-env documentation is positive static
+  documentation evidence, not proof from executing the application.
+- `.gitignore` inspection accepts common equivalent bytecode, cache, coverage,
+  build, and local-environment patterns, with bounded ordered negation handling.
+  It does not query the Git index or implement all Git pattern semantics.

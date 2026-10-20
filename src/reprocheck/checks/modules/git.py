@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from fnmatch import fnmatchcase
 from pathlib import PurePosixPath
 
 from ...models import (
@@ -48,31 +49,65 @@ GIT_SPEC = CheckSpec(
 )
 
 
-def _normalized_entries(text: str) -> set[str]:
-    entries: set[str] = set()
+def _normalized_entries(text: str) -> tuple[str, ...]:
+    entries: list[str] = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#") or line.startswith("!"):
+        if not line or line.startswith("#"):
             continue
-        entries.add(line.rstrip("/"))
-    return entries
+        entries.append(line.rstrip("/"))
+    return tuple(entries)
 
 
-def _covers(entries: set[str], expected: str) -> bool:
-    if expected in entries:
-        return True
-    if expected == "__pycache__":
-        return any(entry in {"__pycache__", "**/__pycache__", "__pycache__/*"} for entry in entries)
-    if expected == "node_modules":
-        return any(
-            entry in {"node_modules", "**/node_modules", "node_modules/*"} for entry in entries
-        )
+def _may_reinclude(pattern: str, artifact: str, *, directory: bool) -> bool:
+    """Conservatively retain common exceptions to an otherwise accepted exclusion."""
+
+    pattern = pattern.lstrip("/")
+    if pattern.startswith("**/"):
+        pattern = pattern[3:]
+    if directory:
+        return artifact in pattern.split("/") or fnmatchcase(artifact, pattern)
+    return fnmatchcase(PurePosixPath(pattern).name, artifact) or fnmatchcase(artifact, pattern)
+
+
+def _covers(entries: tuple[str, ...], expected: str, *, python: bool = False) -> bool:
+    aliases = {expected}
     if expected == "*.pyc":
-        return any(entry in {"*.pyc", "**/*.pyc", "*.py[cod]"} for entry in entries)
-    return any(
-        entry == expected or entry == f"**/{expected}" or entry == f"{expected}/*"
-        for entry in entries
-    )
+        aliases.update({"*.py[cod]", "*.py[co]"})
+    elif expected == ".venv":
+        aliases.update({"venv", "env", "ENV"})
+    elif expected == "coverage" and python:
+        aliases.update({".coverage", ".coverage.*", ".coverage*", "htmlcov", "coverage.xml"})
+
+    for artifact in sorted(aliases):
+        directory = artifact not in {
+            "*.pyc",
+            "*.py[cod]",
+            "*.py[co]",
+            ".coverage",
+            ".coverage.*",
+            ".coverage*",
+            "coverage.xml",
+        }
+        forms = {artifact, f"**/{artifact}"}
+        if directory:
+            forms.update(
+                {f"{artifact}/*", f"{artifact}/**", f"**/{artifact}/*", f"**/{artifact}/**"}
+            )
+        # Root anchoring is sufficient for root build/local directories, but not
+        # for bytecode caches or node_modules that can occur throughout a tree.
+        if expected not in {"*.pyc", "__pycache__", "node_modules"}:
+            forms.update(f"/{form}" for form in tuple(forms) if not form.startswith("**/"))
+        covered = False
+        for entry in entries:
+            if entry.startswith("!"):
+                if _may_reinclude(entry[1:], artifact, directory=directory):
+                    covered = False
+            elif entry in forms:
+                covered = True
+        if covered:
+            return True
+    return False
 
 
 class GitignoreHygieneCheck(BaseCheck):
@@ -83,7 +118,7 @@ class GitignoreHygieneCheck(BaseCheck):
             (
                 repo_file.path
                 for repo_file in context.discovery.files
-                if not repo_file.is_symlink and PurePosixPath(repo_file.path).name == ".gitignore"
+                if not repo_file.is_symlink and repo_file.path == ".gitignore"
             ),
             None,
         )
@@ -123,12 +158,15 @@ class GitignoreHygieneCheck(BaseCheck):
                 ),
             )
         entries = _normalized_entries(result.text)
-        expected = {"dist", "build", "coverage", "*.pyc"}
-        if Ecosystem.PYTHON in context.discovery.ecosystems:
-            expected.update({"__pycache__", ".venv", ".pytest_cache"})
+        expected = {"dist", "build", "coverage"}
+        python = Ecosystem.PYTHON in context.discovery.ecosystems
+        if python:
+            expected.update({"*.pyc", "__pycache__", ".venv", ".pytest_cache"})
         if Ecosystem.NODE in context.discovery.ecosystems:
             expected.add("node_modules")
-        missing = tuple(sorted(item for item in expected if not _covers(entries, item)))
+        missing = tuple(
+            sorted(item for item in expected if not _covers(entries, item, python=python))
+        )
         if missing:
             return (
                 make_finding(

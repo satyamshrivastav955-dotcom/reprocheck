@@ -1,0 +1,9 @@
+verification: pass
+experiment: drift_detected
+verification_runs: 2 (passed: 2, failed: 0)
+  run 1 (python-uv-run-1): pass / verified_pass
+  run 2 (python-uv-run-2): pass / verified_pass
+comparison_valid: true
+reproducibility: not established
+experiment_exit_code: 1
+artifacts_match: false

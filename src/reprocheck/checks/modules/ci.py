@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import re
 
+from ...command_analysis import (
+    MAKE_DEFAULT_POLICY,
+    analyze_command,
+    is_setup_command,
+    workflow_jobs,
+)
 from ...models import (
     Assessment,
     CheckCategory,
@@ -23,7 +29,6 @@ from ..base import (
     read_known_text,
     static_evidence,
 )
-from .commands import classify_command_text
 
 CI_SPEC = CheckSpec(
     check_id="RC-CI-001",
@@ -40,6 +45,9 @@ CI_SPEC = CheckSpec(
         "YAML is not fully parsed because the static engine has no third-party "
         "runtime dependencies.",
         "Provider-specific extensions may be reported as not verified.",
+        "Only literal root Makefile targets, prerequisites and recipes are followed.",
+        "Dynamic Make variables/includes, shell programs and custom job defaults remain uncertain.",
+        MAKE_DEFAULT_POLICY,
     ),
     false_positive_policy=(
         "Require recognizable workflow structure and test intent before reporting a pass."
@@ -75,7 +83,9 @@ def _basic_yaml_shape(text: str) -> tuple[bool, str | None]:
     return True, None
 
 
-def _workflow_assessment(text: str, path: str) -> tuple[str, str | None, str | None]:
+def _workflow_assessment(
+    text: str, path: str, context: CheckContext | None = None
+) -> tuple[str, str | None, str | None]:
     shape_ok, shape_error = _basic_yaml_shape(text)
     if not shape_ok:
         return "malformed", shape_error, None
@@ -98,16 +108,43 @@ def _workflow_assessment(text: str, path: str) -> tuple[str, str | None, str | N
         if not re.search(r"(?m)^\s*(?:script|before_script|stages)\s*:", text):
             return "malformed", "CI file has no recognizable script/stages structure", None
 
-    setup = bool(
-        re.search(
-            r"(?i)(actions/(?:checkout|setup-[A-Za-z0-9_-]+)|\b(?:pip|uv|poetry|npm|pnpm|yarn|cargo|go)\s+(?:install|sync|ci|fetch|mod\s+download)|before_script\s*:|setup-python|setup-node)",
-            text,
-        )
-    )
-    intents, _, excerpt = classify_command_text(text)
-    if not setup or "test" not in intents:
-        return "incomplete", None, excerpt
-    return "valid", None, excerpt
+    uncertainty: list[str] = []
+    for job in workflow_jobs(text, path):
+        job_reason = job.reason or (None if job.runner else "job has no literal runner scope")
+        setup_lines = list(job.setup)
+        if job_reason:
+            uncertainty.append(f"job {job.name}: {job_reason}")
+        for command in job.commands:
+            analysis = analyze_command(command.raw, context)
+            if analysis.reason:
+                uncertainty.append(f"job {job.name}, line {command.line}: {analysis.reason}")
+                continue
+            lines = command.raw.splitlines()
+            for offset, invocation in enumerate(lines):
+                number = command.line + offset
+                if is_setup_command(invocation):
+                    setup_lines.append(number)
+                line_analysis = (
+                    analysis if len(lines) == 1 else analyze_command(invocation, context)
+                )
+                tests = [leaf for leaf in line_analysis.leaves if leaf.intent == "test"]
+                if tests and any(line < number for line in setup_lines) and not job_reason:
+                    evidence = [f"job {job.name}, line {number}: {invocation}"]
+                    evidence.extend(
+                        f"{leaf.source}:{leaf.line}, target {leaf.target}: {leaf.raw}"
+                        for leaf in tests
+                        if leaf.source
+                    )
+                    defaults = sorted({entry for leaf in tests for entry in leaf.make_defaults})
+                    if defaults:
+                        evidence.append(
+                            "declared defaults "
+                            + ", ".join(f"{name}={value}" for name, value in defaults)
+                        )
+                    return "valid", MAKE_DEFAULT_POLICY if defaults else None, " -> ".join(evidence)
+    if uncertainty:
+        return "uncertain", "; ".join(dict.fromkeys(uncertainty)), None
+    return "incomplete", None, None
 
 
 class CiWorkflowCheck(BaseCheck):
@@ -136,6 +173,8 @@ class CiWorkflowCheck(BaseCheck):
             )
 
         observations: list[tuple[str, str, bool]] = []
+        uncertainties: list[tuple[str, str]] = []
+        default_policies: dict[str, str] = {}
         for path in paths:
             result = read_known_text(context, path)
             if result.status != "ok":
@@ -158,7 +197,7 @@ class CiWorkflowCheck(BaseCheck):
                         path=path,
                     ),
                 )
-            outcome, reason, excerpt = _workflow_assessment(result.text, path)
+            outcome, reason, excerpt = _workflow_assessment(result.text, path, context)
             if outcome == "malformed":
                 return (
                     parse_error_finding(
@@ -172,17 +211,41 @@ class CiWorkflowCheck(BaseCheck):
                         path=path,
                     ),
                 )
+            if outcome == "uncertain":
+                uncertainties.append((path, reason or "workflow command is unresolved"))
+            if outcome == "valid" and reason:
+                default_policies[path] = reason
             observations.append((path, excerpt or "", outcome == "valid"))
 
         valid_paths = {path for path, _, is_valid in observations if is_valid}
         if not valid_paths:
+            if uncertainties:
+                return (
+                    make_finding(
+                        self.spec,
+                        title="CI setup/test coverage is not verifiable",
+                        message="Workflow commands or scopes exceed bounded literal analysis.",
+                        assessment=Assessment.UNSUPPORTED,
+                        state=ResultState.NOT_VERIFIED,
+                        evidence=tuple(
+                            static_evidence(
+                                self.spec,
+                                "CI workflow contains unresolved commands.",
+                                source=path,
+                                excerpt=reason,
+                            )
+                            for path, reason in uncertainties
+                        ),
+                        applicability_reason="Unsupported workflow or Makefile syntax.",
+                    ),
+                )
             return (
                 make_finding(
                     self.spec,
                     title="CI workflow lacks setup or test coverage",
                     message=(
                         "Recognized CI configuration exists, but no workflow has both "
-                        "setup and a conservative test command."
+                        "runtime/dependency setup and a conservative test command in one job."
                     ),
                     assessment=Assessment.FAIL,
                     state=ResultState.STATIC_FAIL,
@@ -201,6 +264,9 @@ class CiWorkflowCheck(BaseCheck):
                 "CI workflow has setup and a recognized test command.",
                 source=path,
                 excerpt=excerpt,
+                details={"make_default_policy": default_policies[path]}
+                if path in default_policies
+                else None,
             )
             for path, excerpt, _ in observations
             if path in valid_paths

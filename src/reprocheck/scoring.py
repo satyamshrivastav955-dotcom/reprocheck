@@ -15,6 +15,8 @@ from types import MappingProxyType
 from .models import (
     Assessment,
     CheckSpec,
+    CommandExecution,
+    Evidence,
     Finding,
     JsonModel,
     Report,
@@ -82,7 +84,9 @@ class ScoreSummary(JsonModel):
     verification phase is represented by a :class:`VerificationRun`.  Once a
     phase exists it uses the same applicable-group denominator, with groups
     lacking a verified outcome scoring zero and being called out in
-    ``limitations``.
+    ``limitations``. Linked, recognized test/build command evidence attributes
+    only RC-CMD-001 execution to the commands group; it never changes the
+    original static findings or verifies dependency closure or artifact equality.
     """
 
     score: float
@@ -131,11 +135,80 @@ def _append_unique(target: set[str], values: Iterable[str]) -> None:
     target.update(value for value in values if value)
 
 
+def _execution_identity(command: CommandExecution) -> tuple[object, ...]:
+    # Receipt redaction may normalize logs and environments; neither changes
+    # which argv ran or its operational result.
+    return (
+        command.command.executable,
+        command.command.args,
+        command.command.cwd,
+        command.result_state,
+        command.exit_code,
+        command.timed_out,
+    )
+
+
+def _command_execution_factor(
+    runs: tuple[VerificationRun, ...], evidence: Iterable[Evidence]
+) -> float | None:
+    """Score linked RC-CMD-001 test/build evidence across every command run.
+
+    This is execution coverage, not promotion of the original static findings.
+    Legacy receipts without explicit attribution remain valid but earn no new
+    inferred credit. Run membership and the actual recorded command must agree.
+    """
+
+    observations = tuple(
+        item
+        for item in evidence
+        if item.check_id == "RC-CMD-001"
+        and item.verification_class in {VerificationClass.TEST, VerificationClass.BUILD}
+        and item.details.get("phase") == "verification"
+        and item.command is not None
+    )
+    if not observations:
+        return None
+    factors: list[float] = []
+    for run in runs:
+        if run.verification_class not in {
+            VerificationClass.COMMAND,
+            VerificationClass.TEST,
+            VerificationClass.BUILD,
+        }:
+            continue
+        linked = [
+            item.command
+            for item in observations
+            if item.id in run.evidence_ids
+            and item.command is not None
+            and any(
+                _execution_identity(item.command) == _execution_identity(command)
+                for command in run.commands
+            )
+        ]
+        if not linked:
+            factors.append(0.0)
+            continue
+        factors.append(
+            float(
+                all(
+                    command is not None
+                    and command.result_state is ResultState.VERIFIED_PASS
+                    and command.exit_code == 0
+                    and not command.timed_out
+                    for command in linked
+                )
+            )
+        )
+    return min(factors) if factors else None
+
+
 def score_findings(
     findings: Iterable[Finding],
     *,
     checks: Iterable[CheckSpec] = (),
     verification_runs: Iterable[VerificationRun] = (),
+    evidence: Iterable[Evidence] = (),
 ) -> ScoreSummary:
     """Score findings once per documented group.
 
@@ -217,11 +290,17 @@ def score_findings(
 
     if _has_executed_phase(runs):
         verified_group_scores: dict[str, float] = {}
+        command_factor = _command_execution_factor(runs, evidence)
         for group in applicable:
-            if verified_groups[group]:
-                verified_group_scores[group] = SCORING_GROUP_WEIGHTS[group] * _best_group_factor(
-                    verified_groups[group]
-                )
+            factors = [_state_factor(item.state) for item in verified_groups[group]]
+            if (
+                group == "commands"
+                and command_factor is not None
+                and any(item.check_id == "RC-CMD-001" for item in groups[group])
+            ):
+                factors.append(command_factor)
+            if factors:
+                verified_group_scores[group] = SCORING_GROUP_WEIGHTS[group] * min(factors)
             else:
                 verified_group_scores[group] = 0.0
                 limitations.add(
@@ -269,6 +348,7 @@ def score_report(report: Report) -> ScoreSummary:
         report.findings,
         checks=report.checks,
         verification_runs=report.verification_runs,
+        evidence=report.evidence_receipt.evidence if report.evidence_receipt is not None else (),
     )
 
 

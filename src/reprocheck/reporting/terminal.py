@@ -36,6 +36,13 @@ def _render_score(score: ScoreSummary) -> list[str]:
         lines.append(
             f"    {group}: {_value(score.group_scores[group])}/{SCORING_GROUP_WEIGHTS[group]}"
         )
+    if score.verified_group_scores:
+        lines.append("  verified_group_scores:")
+        for group in score.applicable_groups:
+            lines.append(
+                f"    {group}: {_value(score.verified_group_scores[group])}/"
+                f"{SCORING_GROUP_WEIGHTS[group]}"
+            )
     return lines
 
 
