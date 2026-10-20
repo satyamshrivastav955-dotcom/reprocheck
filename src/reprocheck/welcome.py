@@ -72,7 +72,11 @@ def color_enabled(stream: TextIO | None = None) -> bool:
     """Return whether ANSI color is appropriate for the output stream."""
 
     output = stream if stream is not None else sys.stdout
-    return bool(output.isatty()) and "NO_COLOR" not in os.environ
+    return (
+        bool(output.isatty())
+        and "NO_COLOR" not in os.environ
+        and os.environ.get("TERM", "").lower() != "dumb"
+    )
 
 
 def _terminal_width(stream: TextIO | None) -> int:
@@ -294,7 +298,7 @@ def _wide_layout(version: str, *, enabled: bool, terminal_width: int) -> str:
     lines = [
         indent + _header(version, content_width, enabled=enabled),
         "",
-        *(indent + line for line in _wordmark(content_width - 2, enabled=enabled)),
+        *(indent + "  " + line for line in _wordmark(content_width - 2, enabled=enabled)),
         indent + "  " + _paint(_TAGLINE, _WHITE, enabled=enabled),
         "",
         *(indent + "  " + line for line in _workflow_lines(content_width - 2, enabled=enabled)),
@@ -319,9 +323,9 @@ def _compact_layout(version: str, *, enabled: bool, terminal_width: int) -> str:
     lines.extend(indent + _paint(line, _MUTED, enabled=enabled) for line in _wrap(_TAGLINE, usable))
     lines.extend(("", *(indent + line for line in _workflow_lines(usable, enabled=enabled)), ""))
 
-    for step_line in _step_rows(enabled=enabled):
+    for step_line in _step_rows(enabled=enabled, width=usable):
         if _visible_width(step_line) <= usable:
-            lines.append(indent + step_line.lstrip())
+            lines.append(indent + step_line)
         else:
             lines.extend(indent + line for line in _wrap(_ANSI_RE.sub("", step_line), usable))
     lines.append("")

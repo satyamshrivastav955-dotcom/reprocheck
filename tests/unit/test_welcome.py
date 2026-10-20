@@ -62,6 +62,10 @@ class WelcomeTests(unittest.TestCase):
             self.assertFalse(color_enabled(tty))
             self.assertNotIn("\x1b[", render_welcome("0.1.0", stream=tty))
 
+        with patch.dict("os.environ", {"TERM": "dumb"}, clear=False):
+            self.assertFalse(color_enabled(tty))
+            self.assertNotIn("\x1b[", render_welcome("0.1.0", stream=tty))
+
         self.assertNotIn("\x1b[", render_welcome("0.1.0", color=False, width=120))
 
     def test_footer_docs_link_is_reserved_for_roomy_layouts(self) -> None:
