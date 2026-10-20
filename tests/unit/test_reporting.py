@@ -130,14 +130,23 @@ class ReportingTests(unittest.TestCase):
     def test_verification_metadata_is_visible_in_human_reports(self) -> None:
         report = replace(
             _report(),
-            summary={"verification_status": "pass", "receipt_id": "receipt-demo"},
+            summary={
+                "verification_status": "pass",
+                "experiment_status": "reproducible",
+                "experiment_comparison": {"artifact_equal": True},
+                "receipt_id": "receipt-demo",
+            },
         )
 
         terminal = render_terminal(report)
         markdown = render_markdown(report)
 
         self.assertIn("verification: pass", terminal)
+        self.assertIn("experiment: reproducible", terminal)
+        self.assertIn("artifacts_match: true", terminal)
         self.assertIn("receipt: receipt-demo", terminal)
+        self.assertIn("**Experiment:** `reproducible`", markdown)
+        self.assertIn("**Artifacts match:** `true`", markdown)
         self.assertIn("**Receipt:** `receipt-demo`", markdown)
 
 

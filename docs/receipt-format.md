@@ -14,6 +14,13 @@ The receipt records:
 - static findings, executed verification runs, and explicit limitations;
 - integrity metadata with a canonical SHA-256 hash.
 
+An experiment receipt keeps the existing `receipt-v1` top-level shape for
+compatibility. Its `integrity.details.experiment` object uses the nested
+`experiment-v1` contract and records the common source fingerprint, frozen plan
+fingerprint, backend/image information, two run IDs, selected artifact manifests,
+the pair-level classification, comparison details, and limitations. The two full
+run records remain in `verification_runs`.
+
 Canonicalization sorts JSON object keys and removes timestamps from the hashed
 payload. The integrity hash field itself is excluded from the payload before
 hashing. `reprocheck receipt validate` recomputes the hash and can also compare
@@ -27,3 +34,8 @@ receipts, transparency logs, and external attestations are future work.
 `reprocheck receipt compare` ignores timestamps and reports changes in repository
 content, commands, findings, outcomes, and environment. It does not claim that
 two different environments are equivalent.
+
+Experiment artifact manifests use `artifacts-v1`. They hash explicitly selected
+workspace-relative files or directories using sorted relative paths, byte sizes,
+and raw file bytes. Missing, empty, or unselected artifact evidence is incomplete;
+it is not treated as an equal empty result.

@@ -80,8 +80,16 @@ def render_markdown(
     ]
     verification_status = report.summary.get("verification_status")
     receipt_id = report.summary.get("receipt_id")
+    experiment_status = report.summary.get("experiment_status")
+    experiment_comparison = report.summary.get("experiment_comparison")
     if isinstance(verification_status, str):
         lines.append(f"- **Verification:** `{_md(verification_status)}`")
+    if isinstance(experiment_status, str):
+        lines.append(f"- **Experiment:** `{_md(experiment_status)}`")
+    if isinstance(experiment_comparison, dict):
+        artifact_equal = experiment_comparison.get("artifact_equal")
+        if isinstance(artifact_equal, bool):
+            lines.append(f"- **Artifacts match:** `{str(artifact_equal).lower()}`")
     if isinstance(receipt_id, str):
         lines.append(f"- **Receipt:** `{_md(receipt_id)}`")
     lines.extend(["", *_render_score(score), "## Findings", ""])

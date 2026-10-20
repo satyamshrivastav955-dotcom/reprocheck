@@ -269,8 +269,10 @@ def _run_argv(
     )
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
     try:
+        executable = shutil.which(argv[0], path=environment.get("PATH")) or argv[0]
+        resolved_argv = (executable, *argv[1:])
         process = subprocess.Popen(
-            argv,
+            resolved_argv,
             cwd=str(cwd),
             env=dict(environment),
             stdin=subprocess.DEVNULL,
@@ -452,11 +454,12 @@ class SubprocessExecutor:
         message: str,
         *,
         environment: EnvironmentFingerprint,
+        run_id: str,
         limitations: tuple[str, ...] = (),
     ) -> ExecutionResult:
         observed = _now()
         run = VerificationRun(
-            run_id=f"{plan.profile}-run",
+            run_id=run_id,
             verification_class=VerificationClass.COMMAND,
             state=ResultState.NOT_VERIFIED,
             environment=environment,
@@ -466,11 +469,20 @@ class SubprocessExecutor:
         )
         return ExecutionResult(status, plan.profile, run, (), environment, limitations)
 
-    def execute(self, plan: VerificationPlan, *, approved: bool | None = None) -> ExecutionResult:
+    def execute(
+        self,
+        plan: VerificationPlan,
+        *,
+        approved: bool | None = None,
+        run_id: str | None = None,
+        workspace_source: Path | None = None,
+        workspace_observer: Callable[[Path], None] | None = None,
+    ) -> ExecutionResult:
         """Execute a plan only when approval and backend policy both permit it."""
 
         if approved is not None and not isinstance(approved, bool):
             raise TypeError("approved must be an explicit boolean")
+        effective_run_id = run_id or f"{plan.profile}-run"
         safe_environment = sanitize_environment(allowlist=self.environment_allowlist)
         environment = _environment_fingerprint(
             _container_environment(safe_environment)
@@ -484,6 +496,7 @@ class SubprocessExecutor:
                 VerificationStatus.DENIED,
                 "Explicit approval boolean was not granted; no command was executed.",
                 environment=environment,
+                run_id=effective_run_id,
             )
         if self.backend == "host" and not self.allow_host_exec:
             return self._control_result(
@@ -491,6 +504,7 @@ class SubprocessExecutor:
                 VerificationStatus.BLOCKED,
                 "Host execution requires allow_host_exec=True.",
                 environment=environment,
+                run_id=effective_run_id,
                 limitations=(
                     "Host execution was blocked because the explicit allow_host_exec policy "
                     "was absent.",
@@ -502,6 +516,7 @@ class SubprocessExecutor:
                 VerificationStatus.BLOCKED,
                 "Docker backend is unavailable because its executable was not found.",
                 environment=environment,
+                run_id=effective_run_id,
                 limitations=(
                     "Docker sandbox backend is unavailable; sandbox completeness is not claimed.",
                 ),
@@ -532,7 +547,8 @@ class SubprocessExecutor:
         run_error: str | None = None
         overall_status = VerificationStatus.PASS
         try:
-            with materialize_workspace(plan.repository) as workspace:
+            source = workspace_source or plan.repository
+            with materialize_workspace(source) as workspace:
                 for index, planned in enumerate(plan.commands):
                     command = planned.command
                     command_environment, env_limitations = self._environment(command)
@@ -621,7 +637,7 @@ class SubprocessExecutor:
                         )
 
                     command_executions.append(safe_command_execution)
-                    evidence_id = f"{plan.profile}-command-{index + 1}"
+                    evidence_id = f"{effective_run_id}-command-{index + 1}"
                     evidence.append(
                         Evidence(
                             id=evidence_id,
@@ -644,6 +660,12 @@ class SubprocessExecutor:
                             f"{planned.purpose} returned {command_status.value}."
                         )
                         break
+                if workspace_observer is not None:
+                    try:
+                        workspace_observer(workspace)
+                    except (OSError, ValueError, WorkspaceError) as error:
+                        overall_status = VerificationStatus.INFRA_ERROR
+                        run_error = bounded_redact(str(error))
         except (OSError, RuntimeError, WorkspaceError) as error:
             overall_status = VerificationStatus.INFRA_ERROR
             run_error = bounded_redact(str(error))
@@ -656,7 +678,7 @@ class SubprocessExecutor:
         else:
             run_state = ResultState.NOT_VERIFIED
         run = VerificationRun(
-            run_id=f"{plan.profile}-run",
+            run_id=effective_run_id,
             verification_class=VerificationClass.COMMAND,
             state=run_state,
             commands=tuple(command_executions),
@@ -700,6 +722,9 @@ def execute_plan(
     approved: bool | None = None,
     allow_host_exec: bool = False,
     backend: str = "host",
+    run_id: str | None = None,
+    workspace_source: Path | None = None,
+    workspace_observer: Callable[[Path], None] | None = None,
     **executor_options: object,
 ) -> ExecutionResult:
     """Convenience function for one explicit verification execution."""
@@ -709,7 +734,13 @@ def execute_plan(
         allow_host_exec=allow_host_exec,
         **executor_options,  # type: ignore[arg-type]
     )
-    return executor.execute(plan, approved=approved)
+    return executor.execute(
+        plan,
+        approved=approved,
+        run_id=run_id,
+        workspace_source=workspace_source,
+        workspace_observer=workspace_observer,
+    )
 
 
 execute_verification = execute_plan

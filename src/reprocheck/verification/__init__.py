@@ -1,5 +1,14 @@
 """Explicit, approval-gated verification orchestration."""
 
+from .artifacts import (
+    ARTIFACT_FINGERPRINT_ALGORITHM,
+    ArtifactError,
+    ArtifactFile,
+    ArtifactManifest,
+    artifacts_match,
+    collect_artifacts,
+    normalize_artifact_paths,
+)
 from .executor import (
     DEFAULT_DOCKER_CPUS,
     DEFAULT_DOCKER_MEMORY,
@@ -21,6 +30,12 @@ from .executor import (
     execute_verification,
     sanitize_environment,
 )
+from .experiment import (
+    EXPERIMENT_SCHEMA_VERSION,
+    ExperimentResult,
+    ExperimentStatus,
+    run_experiment,
+)
 from .planner import (
     AcquisitionPolicy,
     PlannedCommand,
@@ -34,6 +49,10 @@ from .workspace import MaterializedWorkspace, WorkspaceError, materialize_worksp
 
 __all__ = [
     "AcquisitionPolicy",
+    "ARTIFACT_FINGERPRINT_ALGORITHM",
+    "ArtifactError",
+    "ArtifactFile",
+    "ArtifactManifest",
     "DEFAULT_ENV_ALLOWLIST",
     "DEFAULT_DOCKER_CPUS",
     "DEFAULT_DOCKER_MEMORY",
@@ -43,6 +62,9 @@ __all__ = [
     "DockerSubprocessExecutor",
     "ExecutionResult",
     "ExecutionStatus",
+    "EXPERIMENT_SCHEMA_VERSION",
+    "ExperimentResult",
+    "ExperimentStatus",
     "HostSubprocessExecutor",
     "MaterializedWorkspace",
     "PlanPhase",
@@ -56,10 +78,14 @@ __all__ = [
     "NODE_DOCKER_IMAGE",
     "PYTHON_DOCKER_IMAGE",
     "available_profiles",
+    "artifacts_match",
+    "collect_artifacts",
+    "normalize_artifact_paths",
     "execute_plan",
     "execute_verification",
     "materialize_workspace",
     "plan_verification",
+    "run_experiment",
     "sanitize_environment",
     "docker_image_for_profile",
 ]

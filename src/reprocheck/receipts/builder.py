@@ -12,6 +12,7 @@ from ..fingerprint import compute_content_fingerprint
 from ..models import (
     CommandExecution,
     CommandSpec,
+    ContentFingerprint,
     EnvironmentFingerprint,
     Evidence,
     EvidenceReceipt,
@@ -112,6 +113,8 @@ def build_receipt(
     evidence: Iterable[Evidence] = (),
     findings: Iterable[Finding] = (),
     limitations: Iterable[str] = (),
+    content_fingerprint: ContentFingerprint | None = None,
+    experiment: dict[str, JSONValue] | None = None,
     receipt_id: str | None = None,
     generated_at: str | None = None,
 ) -> EvidenceReceipt:
@@ -123,7 +126,7 @@ def build_receipt(
     schema.
     """
 
-    content = compute_content_fingerprint(repository)
+    content = content_fingerprint or compute_content_fingerprint(repository)
     # A receipt may be shared independently of the machine that produced it.
     # Keep evidence paths relative and avoid persisting the producer's absolute
     # checkout path in the portable receipt identity.
@@ -190,6 +193,8 @@ def build_receipt(
         details["outcome"] = result.status.value
     if environment is not None:
         details["environment"] = to_json_dict(environment)
+    if experiment is not None:
+        details["experiment"] = experiment
 
     integrity = IntegrityMetadata(
         verified=True,
@@ -198,6 +203,8 @@ def build_receipt(
         details=details,
     )
     selected_id = receipt_id or f"receipt-{content.digest[:16]}-{selected_profile}"
+    if experiment is not None and receipt_id is None:
+        selected_id += "-experiment"
     unsigned = EvidenceReceipt(
         receipt_id=selected_id,
         repository=identity,

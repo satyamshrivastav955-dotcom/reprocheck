@@ -168,6 +168,44 @@ reprocheck verify . \
 
 This is not a sandbox. The receipt records that residual risk.
 
+## Independent reproducibility experiment
+
+The Python-first experiment captures one source snapshot, creates two independent
+workspaces, and runs the same approved `python-uv` plan twice. Select at least one
+workspace-relative output artifact to make the comparison meaningful:
+
+```bash
+reprocheck experiment examples/reproducibility-drift-python \
+  --profile python-uv \
+  --backend docker \
+  --artifact reprocheck-demo-artifact.txt \
+  --receipt experiment-receipt.json \
+  --approve
+```
+
+The plan is printed before either run. The experiment never shares writable
+workspaces or dependency caches between runs. Acquisition is network-enabled;
+later verification commands use Docker networking disabled. The receipt records
+the common source fingerprint, plan, both run outcomes, selected artifact hashes,
+classification, environment details, and limitations.
+
+Experiment classifications are deliberately narrow:
+
+| Classification | Meaning |
+|---|---|
+| `reproducible` | Both runs pass and every selected artifact matches |
+| `drift_detected` | Both runs pass but a selected artifact differs |
+| `pass_fail_disagreement` | One run passes and the other has a test/build failure |
+| `both_failed` | Both runs reach verification and fail |
+| `infrastructure_failure` | Startup, acquisition, backend, timeout, or executor failure prevents comparison |
+| `comparison_invalid` | The source changes or the frozen comparison contract is inconsistent |
+| `incomplete` | Approval, run, artifact, or other required evidence is missing |
+
+The controlled fixture in
+[`examples/reproducibility-drift-python`](examples/reproducibility-drift-python)
+intentionally writes a fresh artifact value on each passing run. It demonstrates
+an observed artifact difference only; it is not a universal reproducibility claim.
+
 Receipt operations are local and do not upload repository contents:
 
 ```bash
@@ -212,7 +250,7 @@ src/reprocheck/
 ├── checks/                # deterministic static check registry and checks
 ├── scoring.py             # applicability-aware static and verified summaries
 ├── reporting/             # terminal, JSON, and Markdown renderers
-├── verification/          # approval, workspaces, limits, and subprocesses
+├── verification/          # approval, snapshots, experiments, artifacts, and subprocesses
 └── receipts/              # canonical receipt build, validation, comparison
 ```
 

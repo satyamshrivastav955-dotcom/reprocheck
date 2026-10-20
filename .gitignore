@@ -220,3 +220,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Generated output from the reproducibility-drift demonstration fixture.
+examples/reproducibility-drift-python/reprocheck-demo-artifact.txt

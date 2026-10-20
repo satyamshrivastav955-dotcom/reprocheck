@@ -66,6 +66,10 @@ def _environments(receipt: EvidenceReceipt) -> JSONValue:
     )
 
 
+def _experiment(receipt: EvidenceReceipt) -> JSONValue:
+    return _normalized(receipt.integrity.details.get("experiment"))
+
+
 @dataclass(frozen=True)
 class ReceiptComparison:
     """Category-level receipt differences, excluding timestamps."""
@@ -76,6 +80,7 @@ class ReceiptComparison:
     finding_changed: bool
     outcome_changed: bool
     environment_changed: bool
+    experiment_changed: bool
 
     @property
     def equal(self) -> bool:
@@ -94,6 +99,7 @@ def compare_receipts(first: EvidenceReceipt, second: EvidenceReceipt) -> Receipt
     finding_changed = _findings(first) != _findings(second)
     outcome_changed = _outcomes(first) != _outcomes(second)
     environment_changed = _environments(first) != _environments(second)
+    experiment_changed = _experiment(first) != _experiment(second)
     changed = tuple(
         name
         for name, value in (
@@ -102,6 +108,7 @@ def compare_receipts(first: EvidenceReceipt, second: EvidenceReceipt) -> Receipt
             ("finding", finding_changed),
             ("outcome", outcome_changed),
             ("environment", environment_changed),
+            ("experiment", experiment_changed),
         )
         if value
     )
@@ -112,6 +119,7 @@ def compare_receipts(first: EvidenceReceipt, second: EvidenceReceipt) -> Receipt
         finding_changed=finding_changed,
         outcome_changed=outcome_changed,
         environment_changed=environment_changed,
+        experiment_changed=experiment_changed,
     )
 
 

@@ -187,6 +187,32 @@ class ReceiptTests(unittest.TestCase):
             with self.assertRaises(ReceiptFormatError):
                 load_receipt(receipt_path)
 
+    def test_experiment_details_round_trip_inside_receipt_v1(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = build_receipt(
+                root,
+                profile="python-uv",
+                verification_runs=(_run(), _run(argument="second")),
+                experiment={
+                    "schema_version": "experiment-v1",
+                    "classification": "drift_detected",
+                    "run_count": 2,
+                    "comparison": {"artifact_equal": False},
+                },
+            )
+            receipt_path = root / "experiment-receipt.json"
+            receipt_path.write_text(receipt.to_json(indent=2), encoding="utf-8")
+
+            loaded = load_receipt(receipt_path)
+
+            self.assertEqual(loaded.schema_version, "receipt-v1")
+            self.assertEqual(
+                loaded.integrity.details["experiment"]["classification"], "drift_detected"
+            )
+            self.assertEqual(len(loaded.verification_runs), 2)
+            self.assertTrue(validate_receipt(loaded).valid)
+
 
 if __name__ == "__main__":
     unittest.main()

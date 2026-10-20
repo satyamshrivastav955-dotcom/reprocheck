@@ -75,8 +75,16 @@ def render_terminal(
     ]
     verification_status = report.summary.get("verification_status")
     receipt_id = report.summary.get("receipt_id")
+    experiment_status = report.summary.get("experiment_status")
+    experiment_comparison = report.summary.get("experiment_comparison")
     if isinstance(verification_status, str):
         lines.append(f"verification: {verification_status}")
+    if isinstance(experiment_status, str):
+        lines.append(f"experiment: {experiment_status}")
+    if isinstance(experiment_comparison, dict):
+        artifact_equal = experiment_comparison.get("artifact_equal")
+        if isinstance(artifact_equal, bool):
+            lines.append(f"artifacts_match: {str(artifact_equal).lower()}")
     if isinstance(receipt_id, str):
         lines.append(f"receipt: {receipt_id}")
     lines.extend(["", *_render_score(score), "", "FINDINGS"])

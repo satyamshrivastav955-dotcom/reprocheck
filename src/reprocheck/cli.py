@@ -20,7 +20,7 @@ import argparse
 import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import Final, NoReturn, Sequence, cast
+from typing import Final, NoReturn, Protocol, Sequence, cast
 
 from .checks import CheckContext, default_registry
 from .command_parser import plan_repository_commands
@@ -36,7 +36,14 @@ from .receipts import (
 )
 from .reporting import render_json, render_markdown, render_terminal, sorted_findings
 from .scoring import ScoreSummary, score_report
-from .verification import ProfileError, VerificationPlan, execute_plan, plan_verification
+from .verification import (
+    ExperimentStatus,
+    ProfileError,
+    VerificationPlan,
+    execute_plan,
+    plan_verification,
+    run_experiment,
+)
 from .welcome import render_welcome
 
 VERSION: Final[str] = "0.1.0"
@@ -62,6 +69,23 @@ class _ParserExit(Exception):
     def __init__(self, status: int) -> None:
         super().__init__()
         self.status = status
+
+
+class _ReconfigurableStream(Protocol):
+    def reconfigure(self, *, encoding: str) -> object:
+        """Set the stream encoding when the runtime supports it."""
+
+
+def _ensure_utf8_stdout() -> None:
+    """Keep structured stdout UTF-8 on native Windows and redirected streams."""
+
+    stream = cast(object, sys.stdout)
+    if not hasattr(stream, "reconfigure"):
+        return
+    try:
+        cast(_ReconfigurableStream, stream).reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        return
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -123,6 +147,50 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="report format (default: terminal)",
     )
     verify.add_argument(
+        "--fail-on",
+        choices=tuple(severity.value for severity in Severity),
+        default=DEFAULT_FAIL_ON.value,
+        help="exit 1 for policy findings at or above this severity (default: high)",
+    )
+    experiment = subparsers.add_parser(
+        "experiment", help="run the approved verification profile twice and compare evidence"
+    )
+    experiment.add_argument("path", metavar="PATH", help="repository directory to experiment")
+    experiment.add_argument("--profile", help="verification profile, such as python-uv")
+    experiment.add_argument(
+        "--backend",
+        choices=("docker", "host"),
+        default="docker",
+        help="execution backend (default: docker; host requires --allow-host-exec)",
+    )
+    experiment.add_argument(
+        "--allow-host-exec",
+        action="store_true",
+        help="explicitly accept residual host-execution risk when --backend host is selected",
+    )
+    experiment.add_argument(
+        "--artifact",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="workspace-relative artifact file or directory to compare; may be repeated",
+    )
+    experiment.add_argument(
+        "--approve",
+        action="store_true",
+        help="explicitly approve both independent experiment runs",
+    )
+    experiment.add_argument(
+        "--receipt", metavar="FILE", help="write the experiment receipt to FILE"
+    )
+    experiment.add_argument("--output", metavar="FILE", help="write the experiment report to FILE")
+    experiment.add_argument(
+        "--format",
+        choices=("terminal", "json", "markdown"),
+        default="terminal",
+        help="report format (default: terminal)",
+    )
+    experiment.add_argument(
         "--fail-on",
         choices=tuple(severity.value for severity in Severity),
         default=DEFAULT_FAIL_ON.value,
@@ -235,6 +303,7 @@ def policy_findings(report: Report, fail_on: Severity) -> tuple[Finding, ...]:
 
 def _write_or_print(rendered: str, output: str | None) -> None:
     if output is None:
+        _ensure_utf8_stdout()
         sys.stdout.write(rendered)
         return
     Path(output).write_text(rendered, encoding="utf-8", newline="\n")
@@ -255,6 +324,22 @@ def _show_plan(plan: VerificationPlan) -> None:
         print("- no commands were planned", file=sys.stderr)
     for limitation in plan.limitations:
         print(f"limitation: {limitation}", file=sys.stderr)
+
+
+def _show_experiment_plan(plan: VerificationPlan, artifact_paths: tuple[str, ...]) -> None:
+    """Display the shared plan and two-run experiment policy before approval."""
+
+    print("REPROCHECK EXPERIMENT PLAN", file=sys.stderr)
+    print("runs: 2 independent workspaces; approval: required", file=sys.stderr)
+    _show_plan(plan)
+    if artifact_paths:
+        for path in artifact_paths:
+            print(f"- artifact={path}", file=sys.stderr)
+    else:
+        print(
+            "limitation: no artifacts selected; a reproducibility comparison cannot complete",
+            file=sys.stderr,
+        )
 
 
 def verify_repository(
@@ -322,6 +407,98 @@ def verify_repository(
     )
 
 
+def experiment_repository(
+    repository: Path,
+    *,
+    profile: str | None,
+    backend: str,
+    approved: bool,
+    allow_host_exec: bool,
+    artifact_paths: tuple[str, ...],
+    receipt_path: str | None,
+) -> Report:
+    """Build a static report and run the selected verification plan twice."""
+
+    static_report = scan_repository(repository)
+    preview_plan = plan_verification(repository, profile=profile)
+    _show_experiment_plan(preview_plan, artifact_paths)
+    experiment = run_experiment(
+        repository,
+        profile=profile,
+        backend=backend,
+        approved=approved,
+        artifact_paths=artifact_paths,
+        allow_host_exec=allow_host_exec,
+    )
+    execution_limitations = tuple(
+        limitation for result in experiment.results for limitation in result.limitations
+    )
+    receipt = build_receipt(
+        repository,
+        plan=experiment.plan,
+        verification_runs=experiment.runs,
+        evidence=experiment.evidence,
+        findings=static_report.findings,
+        limitations=(*experiment.limitations, *execution_limitations),
+        content_fingerprint=experiment.source_fingerprint,
+        experiment=experiment.to_receipt_details(),
+    )
+    if receipt_path is not None:
+        Path(receipt_path).write_text(
+            receipt.to_json(indent=2) + "\n", encoding="utf-8", newline="\n"
+        )
+
+    if experiment.classification == ExperimentStatus.REPRODUCIBLE:
+        state = ResultState.VERIFIED_PASS
+        assessment = Assessment.PASS
+        verification_status = "pass"
+    elif experiment.classification in {
+        ExperimentStatus.DRIFT_DETECTED,
+        ExperimentStatus.PASS_FAIL_DISAGREEMENT,
+        ExperimentStatus.BOTH_FAILED,
+    }:
+        state = ResultState.VERIFIED_FAIL
+        assessment = Assessment.FAIL
+        verification_status = "fail"
+    elif experiment.classification == ExperimentStatus.INFRASTRUCTURE_FAILURE:
+        state = ResultState.NOT_VERIFIED
+        assessment = Assessment.BLOCKED
+        verification_status = "not_verified"
+    else:
+        state = ResultState.NOT_VERIFIED
+        assessment = Assessment.ERROR
+        verification_status = "not_verified"
+
+    summary: dict[str, JSONValue] = dict(static_report.summary)
+    summary.update(
+        {
+            "verification_profile": experiment.profile,
+            "verification_status": verification_status,
+            "experiment_status": experiment.classification,
+            "experiment_mode": "python-two-run",
+            "experiment_backend": experiment.backend,
+            "experiment_run_count": len(experiment.results),
+            "experiment_source_fingerprint": experiment.source_fingerprint.to_dict(),
+            "experiment_plan_fingerprint": experiment.plan_fingerprint,
+            "experiment_comparison": experiment.comparison,
+            "experiment_limitations": list(experiment.limitations),
+            "receipt_id": receipt.receipt_id,
+        }
+    )
+    final_report = replace(
+        static_report,
+        state=state,
+        assessment=assessment,
+        verification_runs=experiment.runs,
+        evidence_receipt=receipt,
+        summary=summary,
+    )
+    return replace(
+        final_report,
+        summary={**final_report.summary, "score_summary": score_report(final_report).to_dict()},
+    )
+
+
 def _receipt_command(arguments: argparse.Namespace) -> int:
     try:
         if arguments.receipt_command == "validate":
@@ -371,7 +548,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.command == "receipt":
         return _receipt_command(arguments)
-    if arguments.command not in {"scan", "verify"}:
+    if arguments.command not in {"scan", "verify", "experiment"}:
         parser.print_usage(sys.stderr)
         print("reprocheck: error: a command is required", file=sys.stderr)
         return 2
@@ -386,11 +563,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 allow_host_exec=arguments.allow_host_exec,
                 receipt_path=arguments.receipt,
             )
+        elif arguments.command == "experiment":
+            report = experiment_repository(
+                Path(arguments.path),
+                profile=arguments.profile,
+                backend=arguments.backend,
+                approved=arguments.approve,
+                allow_host_exec=arguments.allow_host_exec,
+                artifact_paths=tuple(arguments.artifact),
+                receipt_path=arguments.receipt,
+            )
         else:
             report = scan_repository(Path(arguments.path))
         rendered = _render(report, arguments.format)
         _write_or_print(rendered, arguments.output)
-        if arguments.command == "verify" and report.summary.get("verification_status") != "pass":
+        if (
+            arguments.command in {"verify", "experiment"}
+            and report.summary.get("verification_status") != "pass"
+        ):
             return 1
         fail_on = Severity(arguments.fail_on)
         return 1 if policy_findings(report, fail_on) else 0

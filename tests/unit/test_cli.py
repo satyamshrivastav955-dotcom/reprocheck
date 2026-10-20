@@ -187,6 +187,66 @@ class CliTests(unittest.TestCase):
             self.assertIn("uv sync --locked", plan_output.getvalue())
             self.assertNotIn("GET STARTED", output.getvalue())
 
+    def test_experiment_requires_approval_and_keeps_json_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "pyproject.toml").write_text(
+                "[project]\nname='fixture'\nversion='0.1.0'\n", encoding="utf-8"
+            )
+            (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+            (root / "tests").mkdir()
+            (root / "tests" / "test_sample.py").write_text(
+                "def test_sample(): pass\n", encoding="utf-8"
+            )
+            output = io.StringIO()
+            errors = io.StringIO()
+            with redirect_stdout(output), redirect_stderr(errors):
+                exit_code = main(
+                    [
+                        "experiment",
+                        str(root),
+                        "--profile",
+                        "python-uv",
+                        "--backend",
+                        "docker",
+                        "--format",
+                        "json",
+                    ]
+                )
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(payload["summary"]["experiment_status"], "incomplete")
+            self.assertEqual(payload["verification_runs"], [])
+            self.assertNotIn("GET STARTED", output.getvalue())
+            self.assertIn("runs: 2 independent workspaces", errors.getvalue())
+
+    def test_experiment_rejects_invalid_artifact_before_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "pyproject.toml").write_text(
+                "[project]\nname='fixture'\nversion='0.1.0'\n", encoding="utf-8"
+            )
+            (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+            errors = io.StringIO()
+            with redirect_stderr(errors):
+                exit_code = main(
+                    [
+                        "experiment",
+                        str(root),
+                        "--profile",
+                        "python-uv",
+                        "--backend",
+                        "docker",
+                        "--artifact",
+                        "../outside.txt",
+                        "--approve",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("input error", errors.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

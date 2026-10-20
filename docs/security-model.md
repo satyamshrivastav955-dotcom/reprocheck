@@ -45,3 +45,16 @@ ReproCheck returns `NOT_VERIFIED` rather than claiming an isolated pass.
 
 Never use ReproCheck to run a repository that has access to credentials or a
 production Docker socket. Review every proposed command and receipt limitation.
+
+## Independent experiments
+
+The experiment workflow captures the source once before either run and materializes
+two separate workspaces from that snapshot. It rejects symlinks and source changes
+that make the captured manifest inconsistent. Each run gets separate disposable
+containers and writable state; dependency caches are not shared.
+
+Artifact comparison accepts only explicit workspace-relative paths. Absolute paths,
+parent traversal, symlinks, and non-regular entries are rejected. Artifact hashes
+and bounded redacted command evidence are stored in the receipt. A passing test with
+a different selected artifact is reported as drift, while missing or incomplete
+evidence is reported as incomplete rather than as a pass.
