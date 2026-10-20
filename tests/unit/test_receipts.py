@@ -78,6 +78,8 @@ class ReceiptTests(unittest.TestCase):
             )
 
             self.assertEqual(receipt.integrity.details["profile"], "python-uv")
+            self.assertEqual(receipt.repository.root, ".")
+            self.assertNotIn(str(root), receipt.to_json())
             self.assertEqual(receipt.integrity.details["canonical_sha256"], canonical_hash(receipt))
             self.assertEqual(len(receipt.evidence), 1)
             self.assertIn("finding", receipt.evidence[0].details)

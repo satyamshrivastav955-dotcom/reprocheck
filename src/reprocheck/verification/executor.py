@@ -31,6 +31,11 @@ from .redaction import bounded_redact
 from .workspace import WorkspaceError, materialize_workspace
 
 DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024
+DEFAULT_DOCKER_CPUS = "1"
+DEFAULT_DOCKER_MEMORY = "512m"
+DEFAULT_DOCKER_PIDS_LIMIT = "128"
+PYTHON_DOCKER_IMAGE = "ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
+NODE_DOCKER_IMAGE = "node:22-slim"
 DEFAULT_ENV_ALLOWLIST = frozenset(
     {
         "CI",
@@ -53,6 +58,12 @@ DEFAULT_ENV_ALLOWLIST = frozenset(
 _SECRET_ENV_RE = __import__("re").compile(
     r"(?i)(?:token|secret|password|passwd|api[_-]?key|private[_-]?key|credential)"
 )
+
+
+def docker_image_for_profile(profile: str) -> str:
+    """Return the pinned default image for a supported verification profile."""
+
+    return NODE_DOCKER_IMAGE if profile == "node-npm" else PYTHON_DOCKER_IMAGE
 
 
 class VerificationStatus(str, Enum):
@@ -326,6 +337,9 @@ class SubprocessExecutor:
         allow_host_exec: bool = False,
         docker_executable: str = "docker",
         docker_image: str | None = None,
+        docker_cpus: str = DEFAULT_DOCKER_CPUS,
+        docker_memory: str = DEFAULT_DOCKER_MEMORY,
+        docker_pids_limit: str = DEFAULT_DOCKER_PIDS_LIMIT,
         max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
         default_timeout_seconds: float = 600.0,
         cpu_seconds: int | None = 120,
@@ -340,6 +354,9 @@ class SubprocessExecutor:
         self.allow_host_exec = allow_host_exec
         self.docker_executable = docker_executable
         self.docker_image = docker_image
+        self.docker_cpus = docker_cpus
+        self.docker_memory = docker_memory
+        self.docker_pids_limit = docker_pids_limit
         self.max_output_bytes = max_output_bytes
         self.default_timeout_seconds = default_timeout_seconds
         self.cpu_seconds = cpu_seconds
@@ -385,6 +402,16 @@ class SubprocessExecutor:
             "--rm",
             "--network",
             network,
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            "--cpus",
+            self.docker_cpus,
+            "--memory",
+            self.docker_memory,
+            "--pids-limit",
+            self.docker_pids_limit,
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=64m",
             "--mount",
             f"type=bind,src={workspace},dst=/workspace",
             "--workdir",
@@ -489,9 +516,7 @@ class SubprocessExecutor:
                         cwd = _safe_cwd(workspace, command)
                         argv = planned.argv
                         if self.backend == "docker":
-                            image = self.docker_image or (
-                                "node:22-slim" if plan.profile == "node-npm" else "python:3.12-slim"
-                            )
+                            image = self.docker_image or (docker_image_for_profile(plan.profile))
                             argv = self._docker_argv(
                                 planned,
                                 workspace=workspace,
@@ -649,6 +674,11 @@ execute_verification = execute_plan
 
 __all__ = [
     "DEFAULT_ENV_ALLOWLIST",
+    "DEFAULT_DOCKER_CPUS",
+    "DEFAULT_DOCKER_MEMORY",
+    "DEFAULT_DOCKER_PIDS_LIMIT",
+    "NODE_DOCKER_IMAGE",
+    "PYTHON_DOCKER_IMAGE",
     "DEFAULT_MAX_OUTPUT_BYTES",
     "ExecutionResult",
     "ExecutionStatus",
@@ -661,4 +691,5 @@ __all__ = [
     "execute_plan",
     "execute_verification",
     "sanitize_environment",
+    "docker_image_for_profile",
 ]

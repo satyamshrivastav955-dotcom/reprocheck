@@ -189,6 +189,27 @@ class StaticCheckBehaviorTests(unittest.TestCase):
             self.assertEqual(finding.state, ResultState.STATIC_FAIL)
             self.assertEqual(finding.assessment, Assessment.ERROR)
 
+    def test_container_build_does_not_conflict_with_project_build_command(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "README.md").write_text(
+                "Build the package with `uv build`.\nBuild the image with `docker build .`.\n"
+            )
+            workflow = root / ".github" / "workflows"
+            workflow.mkdir(parents=True)
+            (workflow / "ci.yml").write_text(
+                "jobs:\n"
+                "  build:\n"
+                "    steps:\n"
+                "      - run: uv build\n"
+                "      - run: docker build --tag fixture .\n"
+            )
+
+            finding = default_registry().get("RC-CMD-002").evaluate(_context(root))[0]  # type: ignore[union-attr]
+
+            self.assertEqual(finding.state, ResultState.LOOKS_CORRECT)
+            self.assertEqual(finding.assessment, Assessment.PASS)
+
 
 if __name__ == "__main__":
     unittest.main()

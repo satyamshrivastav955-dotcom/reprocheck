@@ -21,6 +21,17 @@ Docker is the default verification backend. If Docker is unavailable, verificati
 is recorded as blocked; ReproCheck does not silently fall back to host execution.
 Host execution requires both `--backend host` and `--allow-host-exec`.
 
+Build and run the runtime image when Docker is available:
+
+```bash
+docker build --tag reprocheck:local .
+docker run --rm --read-only reprocheck:local --version
+```
+
+The release candidate has not claimed a successful image build from environments
+without Docker. CI includes a genuine `docker build` step on its Docker-capable
+runner.
+
 ## Requirements
 
 - Python 3.12 (pinned in `.python-version`).
@@ -98,7 +109,11 @@ reprocheck verify . \
 The command plan is printed before execution. Dependency acquisition is marked
 as network-enabled; verification commands are requested with networking disabled
 by the Docker backend. Every command is passed as an argument array, not a shell
-string. Logs are bounded and redacted before they are stored.
+string. The backend also requests dropped capabilities, `no-new-privileges`,
+CPU/memory/process limits, and a bounded temporary filesystem. The image's
+default user is retained rather than claiming a universal non-root guarantee;
+the daemon and image configuration remain part of the trust boundary. Logs are
+bounded and redacted before they are stored.
 
 If Docker is unavailable, an explicit local-only demonstration can be run with:
 

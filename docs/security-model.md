@@ -30,14 +30,18 @@ The executor applies:
 - process-group termination on timeout;
 - temporary regular-file-only workspaces with symlink rejection;
 - best-effort CPU/address-space limits on Unix;
-- Docker `--network none` for non-acquisition commands when Docker is available.
+- Docker `--network none` for non-acquisition commands when Docker is available;
+- Docker capability dropping, `no-new-privileges`, CPU/memory/process limits, and
+  a bounded `/tmp` tmpfs when the daemon supports those options.
 
 Docker is not a complete sandbox. The Docker daemon, host kernel, container
 runtime, image, resource configuration, and dependency acquisition phase remain
 in the trust boundary. Host execution is blocked unless both `--backend host` and
 `--allow-host-exec` are explicit, and its residual risk is recorded in the
-receipt. If Docker is unavailable, ReproCheck returns `NOT_VERIFIED` rather than
-claiming an isolated pass.
+receipt. The backend does not force a universal non-root UID because package
+acquisition and project workspaces have incompatible ownership requirements
+across images; it does not claim non-root isolation. If Docker is unavailable,
+ReproCheck returns `NOT_VERIFIED` rather than claiming an isolated pass.
 
 Never use ReproCheck to run a repository that has access to credentials or a
 production Docker socket. Review every proposed command and receipt limitation.

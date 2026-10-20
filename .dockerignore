@@ -1,0 +1,17 @@
+.git
+.github
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+dist
+build
+coverage
+htmlcov
+*.py[cod]
+*.egg-info
+verification-receipt.json
+*-receipt.json
+report.json
+self-scan.json

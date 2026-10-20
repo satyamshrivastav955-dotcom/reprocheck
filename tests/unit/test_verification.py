@@ -6,7 +6,10 @@ from pathlib import Path
 
 from reprocheck.models import CommandSpec, Ecosystem
 from reprocheck.verification import (
+    NODE_DOCKER_IMAGE,
+    PYTHON_DOCKER_IMAGE,
     AcquisitionPolicy,
+    DockerSubprocessExecutor,
     ExecutionStatus,
     PlannedCommand,
     PlanPhase,
@@ -261,6 +264,30 @@ class WorkspaceAndExecutorTests(unittest.TestCase):
             )
             self.assertEqual(blocked.status, ExecutionStatus.BLOCKED)
             self.assertEqual(blocked.commands, ())
+
+    def test_docker_backend_uses_profile_images_and_resource_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._command_plan(root, "-c", "print('safe')")
+            planned = plan.commands[0]
+            executor = DockerSubprocessExecutor(docker_image=PYTHON_DOCKER_IMAGE)
+
+            argv = executor._docker_argv(  # noqa: SLF001
+                planned,
+                workspace=root,
+                environment={"PATH": "/usr/bin"},
+                image=PYTHON_DOCKER_IMAGE,
+            )
+
+            self.assertIn("--network", argv)
+            self.assertIn("none", argv)
+            self.assertIn("--cap-drop=ALL", argv)
+            self.assertIn("--security-opt=no-new-privileges", argv)
+            self.assertIn("--cpus", argv)
+            self.assertIn("--memory", argv)
+            self.assertIn("--pids-limit", argv)
+            self.assertIn("--tmpfs", argv)
+            self.assertNotEqual(PYTHON_DOCKER_IMAGE, NODE_DOCKER_IMAGE)
 
 
 if __name__ == "__main__":

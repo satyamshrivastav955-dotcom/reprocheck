@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -123,7 +124,10 @@ def build_receipt(
     """
 
     content = compute_content_fingerprint(repository)
-    identity = build_repository_identity(repository)
+    # A receipt may be shared independently of the machine that produced it.
+    # Keep evidence paths relative and avoid persisting the producer's absolute
+    # checkout path in the portable receipt identity.
+    identity = replace(build_repository_identity(repository), root=".")
     selected_profile = (
         profile
         or (result.profile if result is not None else None)

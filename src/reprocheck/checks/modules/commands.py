@@ -376,7 +376,12 @@ class CommandConsistencyCheck(BaseCheck):
             )
         conflicts: list[tuple[str, tuple[str, ...]]] = []
         for intent, items in by_intent.items():
-            families = {family for item in items for family in item.families if family != "script"}
+            families = {
+                family
+                for item in items
+                for family in item.families
+                if family not in {"script", "container"}
+            }
             if len(families) > 1:
                 conflicts.append((intent, tuple(sorted(families))))
         evidence = tuple(

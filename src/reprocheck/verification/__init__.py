@@ -1,8 +1,13 @@
 """Explicit, approval-gated verification orchestration."""
 
 from .executor import (
+    DEFAULT_DOCKER_CPUS,
+    DEFAULT_DOCKER_MEMORY,
+    DEFAULT_DOCKER_PIDS_LIMIT,
     DEFAULT_ENV_ALLOWLIST,
     DEFAULT_MAX_OUTPUT_BYTES,
+    NODE_DOCKER_IMAGE,
+    PYTHON_DOCKER_IMAGE,
     DockerExecutor,
     DockerSubprocessExecutor,
     ExecutionResult,
@@ -11,6 +16,7 @@ from .executor import (
     SubprocessExecutor,
     VerificationExecutor,
     VerificationStatus,
+    docker_image_for_profile,
     execute_plan,
     execute_verification,
     sanitize_environment,
@@ -29,6 +35,9 @@ from .workspace import MaterializedWorkspace, WorkspaceError, materialize_worksp
 __all__ = [
     "AcquisitionPolicy",
     "DEFAULT_ENV_ALLOWLIST",
+    "DEFAULT_DOCKER_CPUS",
+    "DEFAULT_DOCKER_MEMORY",
+    "DEFAULT_DOCKER_PIDS_LIMIT",
     "DEFAULT_MAX_OUTPUT_BYTES",
     "DockerExecutor",
     "DockerSubprocessExecutor",
@@ -44,10 +53,13 @@ __all__ = [
     "VerificationPlan",
     "VerificationStatus",
     "WorkspaceError",
+    "NODE_DOCKER_IMAGE",
+    "PYTHON_DOCKER_IMAGE",
     "available_profiles",
     "execute_plan",
     "execute_verification",
     "materialize_workspace",
     "plan_verification",
     "sanitize_environment",
+    "docker_image_for_profile",
 ]

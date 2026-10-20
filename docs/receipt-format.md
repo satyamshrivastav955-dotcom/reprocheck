@@ -5,7 +5,8 @@ Receipts use the versioned `receipt-v1` JSON shape in
 
 The receipt records:
 
-- repository identity and `filesystem-v1` content fingerprint;
+- portable repository identity (`root` is recorded as `.` rather than the
+  producer's absolute checkout path) and `filesystem-v1` content fingerprint;
 - selected verification profile;
 - non-secret environment fingerprint and tool/backend information;
 - planned and executed argv commands, phases, network requirement, timestamps,
