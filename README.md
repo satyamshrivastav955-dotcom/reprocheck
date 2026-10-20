@@ -28,14 +28,16 @@ docker build --tag reprocheck:local .
 docker run --rm --read-only reprocheck:local --version
 ```
 
-The release candidate has not claimed a successful image build from environments
-without Docker. CI includes a genuine `docker build` step on its Docker-capable
-runner.
+The image uses `reprocheck` as its entry point, so the version command above is
+also the documented smoke test. CI runs both the Linux image build and this
+entry-point check on its Docker-capable runner.
 
 ## Requirements
 
 - Python 3.12 (pinned in `.python-version`).
 - [uv](https://docs.astral.sh/uv/) 0.13 or a compatible current uv release.
+- GNU Make for the `make test` quality gate (or run its documented `uv` command
+  directly on systems without Make).
 - Linux, Windows (10/11), and macOS environments supported.
 - Docker Engine is optional for static scans and required for the default isolated
   verification backend. Docker is not a complete security sandbox.
@@ -49,14 +51,14 @@ From a checkout:
 
 ```bash
 uv sync --locked --dev
-uv run reprocheck scan .
+uv run --locked reprocheck scan .
 ```
 
 With no subcommand, ReproCheck opens with a compact terminal welcome showing the
 real first steps:
 
 ```bash
-reprocheck
+uv run --locked reprocheck
 ```
 
 The welcome is plain text when stdout is redirected or `NO_COLOR` is set. It is
@@ -88,7 +90,7 @@ authenticating the intended registries, the release commands are:
 uv build
 
 # Publish the wheel and source distribution to the configured Python registry.
-python -m twine upload dist/reprocheck-*.whl dist/reprocheck-*.tar.gz
+uv publish dist/reprocheck-*.whl dist/reprocheck-*.tar.gz
 
 # Build and publish a container image to the configured OCI registry.
 docker build --tag <registry>/<namespace>/reprocheck:<version> .
@@ -102,9 +104,9 @@ claimed until the registry command returns success.
 ## Scan reports
 
 ```bash
-reprocheck scan .
-reprocheck scan . --format json --output report.json --fail-on high
-reprocheck scan . --format markdown --output report.md
+uv run --locked reprocheck scan .
+uv run --locked reprocheck scan . --format json --output report.json --fail-on high
+uv run --locked reprocheck scan . --format markdown --output report.md
 ```
 
 Exit codes are stable:
@@ -133,13 +135,13 @@ been mapped to individual static findings.
 First inspect the proposed plan without granting execution:
 
 ```bash
-reprocheck verify . --profile python-uv --backend docker --format terminal
+uv run --locked reprocheck verify . --profile python-uv --backend docker --format terminal
 ```
 
 Then explicitly approve it:
 
 ```bash
-reprocheck verify . \
+uv run --locked reprocheck verify . \
   --profile python-uv \
   --backend docker \
   --approve \
@@ -158,7 +160,7 @@ bounded and redacted before they are stored.
 If Docker is unavailable, an explicit local-only demonstration can be run with:
 
 ```bash
-reprocheck verify . \
+uv run --locked reprocheck verify . \
   --profile python-uv \
   --backend host \
   --allow-host-exec \
@@ -175,7 +177,7 @@ workspaces, and runs the same approved `python-uv` plan twice. Select at least o
 workspace-relative output artifact to make the comparison meaningful:
 
 ```bash
-reprocheck experiment examples/reproducibility-drift-python \
+uv run --locked reprocheck experiment examples/reproducibility-drift-python \
   --profile python-uv \
   --backend docker \
   --artifact reprocheck-demo-artifact.txt \
@@ -215,8 +217,8 @@ an observed artifact difference only; it is not a universal reproducibility clai
 Receipt operations are local and do not upload repository contents:
 
 ```bash
-reprocheck receipt validate verification-receipt.json --repository .
-reprocheck receipt compare before.json after.json
+uv run --locked reprocheck receipt validate verification-receipt.json --repository .
+uv run --locked reprocheck receipt compare before.json after.json
 ```
 
 Receipts use canonical JSON and SHA-256 to detect changes relative to a trusted
@@ -232,7 +234,7 @@ uv run --locked --offline reprocheck experiment examples/reproducibility-drift-p
   --receipt "$env:TEMP\reprocheck-experiment-receipt-final.json" `
   --format terminal --approve
 
-reprocheck receipt validate "$env:TEMP\reprocheck-experiment-receipt-final.json" `
+uv run --locked --offline reprocheck receipt validate "$env:TEMP\reprocheck-experiment-receipt-final.json" `
   --repository examples/reproducibility-drift-python
 ```
 
@@ -249,12 +251,25 @@ The canonical offline check command is:
 make test
 ```
 
-It runs Ruff, mypy, formatting validation, and the complete pytest suite from the
-locked uv environment. Other useful commands are:
+Run `uv sync --locked --dev` once before this command to populate the project
+environment. Dependency acquisition is the setup step; `make test` itself is
+explicitly offline and runs Ruff, mypy, formatting validation, and the complete
+pytest suite without using a host-global environment. On systems without GNU
+Make, the complete test suite can be run directly with the pinned Python
+runtime and no third-party runner or network access:
 
 ```bash
-uv run --locked python -m pytest
-uv run --locked python -m pytest tests/unit/test_verification.py
+PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+This direct command is the judge-style offline test command; all repository
+tests use the standard-library `unittest` API. The `make test` target remains
+the broader offline quality gate when the locked development tools are present.
+
+Other useful commands are:
+
+```bash
+uv run --locked --offline python -m pytest tests/unit/test_verification.py
 uv build
 ```
 

@@ -25,9 +25,11 @@ jobs:
       - name: Run canonical tests
         run: make test
       - name: Run ReproCheck self-scan
-        run: uv run reprocheck scan . --format json --fail-on high --output self-scan.json
+        run: uv run --locked reprocheck scan . --format json --fail-on high --output self-scan.json
       - name: Build runtime Docker image
         run: docker build --tag reprocheck:ci .
+      - name: Smoke test runtime Docker entry point
+        run: docker run --rm --read-only reprocheck:ci --version
       - name: Upload self-scan evidence
         if: always()
         uses: actions/upload-artifact@v4
