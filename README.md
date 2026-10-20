@@ -65,6 +65,28 @@ registry publication has occurred. For a local package build:
 uv build
 ```
 
+## Release and deployment
+
+Registry publication and Docker image publication are separate release steps and
+were not performed by this checkout. After reviewing the generated artifacts and
+authenticating the intended registries, the release commands are:
+
+```bash
+# Build the Python artifacts locally.
+uv build
+
+# Publish the wheel and source distribution to the configured Python registry.
+python -m twine upload dist/reprocheck-*.whl dist/reprocheck-*.tar.gz
+
+# Build and publish a container image to the configured OCI registry.
+docker build --tag <registry>/<namespace>/reprocheck:<version> .
+docker push <registry>/<namespace>/reprocheck:<version>
+```
+
+Successful `uv build` or `docker build` commands do not prove registry access or
+publication. No credentials are stored in this repository, and no deployment is
+claimed until the registry command returns success.
+
 ## Scan reports
 
 ```bash
