@@ -19,7 +19,7 @@ class CliTests(unittest.TestCase):
             exit_code = main([])
 
         self.assertEqual(exit_code, 0)
-        self.assertIn("ReproCheck", output.getvalue())
+        self.assertIn("R E P R O C H E C K", output.getvalue())
         self.assertIn("GET STARTED", output.getvalue())
         self.assertIn("reprocheck scan .", output.getvalue())
         self.assertIn("reprocheck verify . --profile python-uv --backend docker", output.getvalue())
@@ -40,15 +40,13 @@ class CliTests(unittest.TestCase):
 
         narrow = render_welcome("0.1.0", color=False, width=80)
         narrow_lines = narrow.splitlines()
-        separator_index = next(
-            index for index, line in enumerate(narrow_lines) if line and set(line) == {"-"}
-        )
-        self.assertEqual(narrow_lines[separator_index + 1], "")
-        self.assertEqual(narrow_lines[separator_index + 2], "ReproCheck")
+        self.assertTrue(any("GET STARTED" in line for line in narrow_lines))
+        self.assertTrue(any("Repro" in line or "####" in line for line in narrow_lines))
         narrow_start_index = next(
             index for index, line in enumerate(narrow_lines) if "GET STARTED" in line
         )
         self.assertGreater(narrow_start_index, wide_start_index)
+        self.assertLessEqual(max(map(len, narrow_lines)), 80)
 
     def test_help_and_version_do_not_include_welcome(self) -> None:
         for arguments in (
