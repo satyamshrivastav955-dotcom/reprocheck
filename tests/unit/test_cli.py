@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from reprocheck.cli import main, scan_repository
 from reprocheck.reporting import render_json
+from reprocheck.welcome import render_welcome
 
 
 class CliTests(unittest.TestCase):
@@ -25,6 +26,29 @@ class CliTests(unittest.TestCase):
         self.assertIn("reprocheck receipt --help", output.getvalue())
         self.assertEqual(errors.getvalue(), "")
         self.assertNotIn("usage:", output.getvalue().lower())
+        self.assertNotIn("\x1b[", output.getvalue())
+
+    def test_welcome_adapts_between_wide_and_narrow_terminals(self) -> None:
+        wide = render_welcome("0.1.0", color=False, width=140)
+        wide_lines = wide.splitlines()
+        self.assertTrue(all(ord(character) < 128 for character in wide))
+        wide_start_index = next(
+            index for index, line in enumerate(wide_lines) if "GET STARTED" in line
+        )
+        self.assertIn("> reprocheck scan .", wide_lines[wide_start_index + 1])
+        self.assertLessEqual(max(map(len, wide_lines)), 140)
+
+        narrow = render_welcome("0.1.0", color=False, width=80)
+        narrow_lines = narrow.splitlines()
+        separator_index = next(
+            index for index, line in enumerate(narrow_lines) if line and set(line) == {"-"}
+        )
+        self.assertEqual(narrow_lines[separator_index + 1], "")
+        self.assertEqual(narrow_lines[separator_index + 2], "ReproCheck")
+        narrow_start_index = next(
+            index for index, line in enumerate(narrow_lines) if "GET STARTED" in line
+        )
+        self.assertGreater(narrow_start_index, wide_start_index)
 
     def test_help_and_version_do_not_include_welcome(self) -> None:
         for arguments in (
@@ -161,6 +185,7 @@ class CliTests(unittest.TestCase):
             self.assertTrue(receipt_path.exists())
             self.assertIn("approval: required", plan_output.getvalue())
             self.assertIn("uv sync --locked", plan_output.getvalue())
+            self.assertNotIn("GET STARTED", output.getvalue())
 
 
 if __name__ == "__main__":
