@@ -323,7 +323,10 @@ class WorkspaceAndExecutorTests(unittest.TestCase):
             self.assertNotEqual(PYTHON_DOCKER_IMAGE, NODE_DOCKER_IMAGE)
 
     def test_docker_does_not_forward_windows_path_or_misclassify_startup_errors(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        # The Docker backend mounts /tmp with noexec. Keep the explicit Docker
+        # stub on the project workspace filesystem so the test models a usable
+        # executable backend rather than Docker's intentional /tmp restriction.
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
             root = Path(directory)
             plan = VerificationPlan(
                 repository=root,
