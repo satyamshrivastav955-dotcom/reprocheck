@@ -260,7 +260,7 @@ def _footer(width: int, *, enabled: bool) -> list[str]:
     rule = _paint("-" * width, _MUTED, enabled=enabled)
     message_left = "Your repository works here."
     message_right = "Prove it can be reproduced."
-    docs = "docs.reprocheck.dev"
+    docs = "README.md + docs/"
     if width >= len(message_left) + len(message_right) + len(docs) + 8:
         gap = width - len(message_left) - 1 - len(message_right) - len(docs)
         message = (

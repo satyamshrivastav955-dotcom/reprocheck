@@ -1,335 +1,429 @@
 # ReproCheck
 
-**Your repository works here. Measure whether it can be reproduced.**
+<div align="center">
 
-ReproCheck is a local-first CLI for auditing reproducibility risks and collecting
-bounded evidence from a clean verification run. It is deliberately explicit:
-`scan` is read-only and never runs repository code; `verify` displays proposed
-commands and requires `--approve` before execution.
+<pre>
+R E P R O C H E C K
+</pre>
 
-## Status and scope
+<strong>Run the same verification workflow twice. Compare the evidence. Detect artifact drift.</strong>
 
-This MVP supports static discovery and checks for Python and Node.js/TypeScript
-repositories. It recognizes other ecosystems as unsupported rather than
-guessing their behavior. The clean-room profiles are:
+<p>
+  <a href="https://github.com/satyamshrivastav955-dotcom/reprocheck/actions/workflows/ci.yml"><img src="https://github.com/satyamshrivastav955-dotcom/reprocheck/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://www.python.org/downloads/release/python-3120/"><img src="https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-750014" alt="MIT license"></a>
+</p>
 
-- `python-uv`: `uv sync --locked`, followed by the discovered Python test path.
-- `python-pip-editable`: an explicit, opt-in host-oriented fallback.
-- `node-npm`: `npm ci`, followed by declared package test/build scripts.
+<p>
+  <a href="#quick-start">Quick start</a> ·
+  <a href="docs/reproducibility-drift-demo.md">Guided demo</a> ·
+  <a href="docs/supported-platforms.md">Supported profiles</a> ·
+  <a href="docs/security-model.md">Security model</a>
+</p>
 
-Docker is the default verification backend. If Docker is unavailable, verification
-is recorded as blocked; ReproCheck does not silently fall back to host execution.
-Host execution requires both `--backend host` and `--allow-host-exec`.
+</div>
 
-Build and run the runtime image when Docker is available:
+ReproCheck audits a repository, proposes an explicit verification plan, and can
+run that plan in a clean backend with approval. Its two-run experiment uses one
+source snapshot, two independent workspaces, and selected artifact hashes to
+answer a narrower question than “did the tests pass?”
+
+> Passing tests in two executions do not prove that the generated artifacts are
+> identical. ReproCheck keeps those facts separate and reports artifact drift
+> when the selected evidence differs.
+
+The result applies only to the selected source snapshot, verification profile,
+execution backend, environment, and artifacts. ReproCheck does not claim that a
+repository is reproducible everywhere.
+
+## What it does
+
+- **Scan** — inspect repository structure and reproducibility signals without
+  executing repository commands.
+- **Verify** — show an argv-level plan, wait for explicit approval, then collect
+  bounded evidence from a clean verification workspace.
+- **Experiment** — run the approved plan twice in independent workspaces and
+  compare selected files or directories.
+- **Receipt** — write a portable JSON receipt with source fingerprints, run
+  outcomes, artifact manifests, limitations, and canonical SHA-256 integrity.
+
+## Why two passing runs can still drift
+
+A test suite can pass while a build writes a timestamp, a random identifier, a
+platform-specific file, or another changing output. If both verification commands
+return success but a selected artifact differs, the experiment is:
+
+```text
+Run A: pass / verified_pass
+Run B: pass / verified_pass
+Artifacts: different
+Experiment: drift_detected
+Reproducibility: not established
+```
+
+That is not a contradiction. The run-level result says the commands passed; the
+experiment-level result says the selected outputs were not equal.
+
+## How it works
+
+1. Inspect the repository with a read-only static scan.
+2. Construct an explicit, allow-listed verification plan.
+3. Show the plan and require `--approve` before executing commands.
+4. Materialize an independent clean workspace for each run.
+5. Collect command outcomes, environment metadata, and selected artifact hashes.
+6. Compare the evidence and classify the pair of runs.
+7. Write a receipt that another process can validate locally.
+
+## Quick start
+
+### Prerequisites
+
+- Python **3.12**. The supported range is declared in `pyproject.toml` and
+  `.python-version`.
+- [uv](https://docs.astral.sh/uv/) for the locked development environment. CI
+  currently uses uv `0.13.0`; a compatible current release is supported.
+- Docker Engine or Docker Desktop for the documented isolated verification and
+  experiment workflows. Static scans do not require Docker.
+- GNU Make only if you want to use the full `make test` quality-gate wrapper.
+
+Install uv using the [official installation instructions](https://docs.astral.sh/uv/getting-started/installation/),
+then verify the tools before continuing:
+
+```bash
+python3 --version
+uv --version
+docker --version  # required for verify/experiment with --backend docker
+```
+
+### Install this checkout for development
+
+From the ReproCheck checkout:
+
+```bash
+uv python install 3.12
+uv sync --locked --dev
+uv run --locked reprocheck --help
+```
+
+This keeps dependencies in the project environment. It does not install a
+published `reprocheck` command globally.
+
+To see the adaptive first-run guide after installation:
+
+```bash
+uv run --locked reprocheck
+```
+
+Use `--help` for the script-friendly command list; the welcome is intentionally
+kept out of help, version, JSON, Markdown, and receipt output.
+
+### Build and smoke-test the runtime image
+
+The repository also provides a small runtime image with `reprocheck` as its
+entry point:
 
 ```bash
 docker build --tag reprocheck:local .
 docker run --rm --read-only reprocheck:local --version
 ```
 
-The image uses `reprocheck` as its entry point, so the version command above is
-also the documented smoke test. CI runs both the Linux image build and this
-entry-point check on its Docker-capable runner.
+PowerShell uses the same commands:
 
-## Requirements
+```powershell
+docker build --tag reprocheck:local .
+docker run --rm --read-only reprocheck:local --version
+```
 
-- Python 3.12 (pinned in `.python-version`).
-- [uv](https://docs.astral.sh/uv/) 0.13 or a compatible current uv release.
-- GNU Make for the `make test` quality gate (or run its documented `uv` command
-  directly on systems without Make).
-- Linux, Windows (10/11), and macOS environments supported.
-- Docker Engine is optional for static scans and required for the default isolated
-  verification backend. Docker is not a complete security sandbox.
+The Docker image is useful for the CLI runtime smoke test. The clean-room
+verification backend uses its own profile images and remains subject to Docker
+daemon and host-kernel boundaries.
 
-The repository currently has no runtime dependency beyond Python's standard
-library. Development tools are locked in `uv.lock`.
+### Run it against another repository
 
-## Install and run
-
-From a checkout:
+From the ReproCheck checkout, scan the current checkout:
 
 ```bash
-uv sync --locked --dev
 uv run --locked reprocheck scan .
 ```
 
-With no subcommand, ReproCheck opens with a compact terminal welcome showing the
-real first steps:
+To invoke the source checkout from elsewhere, use uv's explicit project path:
 
 ```bash
-uv run --locked reprocheck
+# POSIX shell
+uv run --project /path/to/reprocheck --locked reprocheck scan /path/to/target
 ```
 
-The welcome is plain text when stdout is redirected or `NO_COLOR` is set. It is
-never added to JSON, Markdown, receipt output, or detailed `--help` output, so
-those interfaces remain safe for CI and scripts.
-
-The intended registry installation shape is:
-
-```bash
-uvx reprocheck scan <repository-path>
-pipx install reprocheck
+```powershell
+# PowerShell
+uv run --project C:\src\reprocheck --locked reprocheck scan C:\src\target
 ```
 
-Those commands require a published package; this checkout does not claim that a
-registry publication has occurred. For a local package build:
+The target path is the repository being inspected; the `--project` path is the
+ReproCheck checkout that supplies the CLI.
+
+### First scan and plan preview
 
 ```bash
-uv build
+uv run --locked reprocheck scan /path/to/target --format terminal
+uv run --locked reprocheck verify /path/to/target \
+  --profile python-uv \
+  --backend docker \
+  --format terminal
 ```
 
-## Release and deployment
+`scan` is read-only. The `verify` preview prints the acquisition and verification
+commands but executes nothing without `--approve`; this intentional preview
+returns exit code `1` because no verification has been completed yet.
 
-Registry publication and Docker image publication are separate release steps and
-were not performed by this checkout. After reviewing the generated artifacts and
-authenticating the intended registries, the release commands are:
+### Approve one verification
 
-```bash
-# Build the Python artifacts locally.
-uv build
-
-# Publish the wheel and source distribution to the configured Python registry.
-uv publish dist/reprocheck-*.whl dist/reprocheck-*.tar.gz
-
-# Build and publish a container image to the configured OCI registry.
-docker build --tag <registry>/<namespace>/reprocheck:<version> .
-docker push <registry>/<namespace>/reprocheck:<version>
-```
-
-Successful `uv build` or `docker build` commands do not prove registry access or
-publication. No credentials are stored in this repository, and no deployment is
-claimed until the registry command returns success.
-
-## Scan reports
+After reviewing the displayed plan:
 
 ```bash
-uv run --locked reprocheck scan .
-uv run --locked reprocheck scan . --format json --output report.json --fail-on high
-uv run --locked reprocheck scan . --format markdown --output report.md
-```
-
-Exit codes are stable:
-
-| Code | Meaning |
-|---:|---|
-| 0 | No finding at or above `--fail-on`; an approved experiment is reproducible |
-| 1 | A policy finding meets `--fail-on`, verification fails, or an experiment is drifted, mismatched, incomplete, or infrastructure-blocked |
-| 2 | Invalid usage, path, or input |
-| 3 | Unexpected internal error |
-| 130 | Interrupted by the user |
-
-JSON is the CI interface. Findings are ordered by stable ID, path, and
-fingerprint. A score is a coverage-aware static readiness summary, not proof of
-successful execution. Presence of a manifest, lockfile, or Dockerfile is never
-reported as a verified pass.
-
-The `verified_score` is intentionally separate: it scores only findings with
-`VERIFIED_PASS` or `VERIFIED_FAIL` evidence. A successful verification run does
-not automatically verify every static scoring group, so a report can honestly
-show `verified_score: 0/<applicable weight>` when the executed commands have not
-been mapped to individual static findings.
-
-## Clean-room verification
-
-First inspect the proposed plan without granting execution:
-
-```bash
-uv run --locked reprocheck verify . --profile python-uv --backend docker --format terminal
-```
-
-Then explicitly approve it:
-
-```bash
-uv run --locked reprocheck verify . \
+uv run --locked reprocheck verify /path/to/target \
   --profile python-uv \
   --backend docker \
   --approve \
   --receipt verification-receipt.json
 ```
 
-The command plan is printed before execution. Dependency acquisition is marked
-as network-enabled; verification commands are requested with networking disabled
-by the Docker backend. Every command is passed as an argument array, not a shell
-string. The backend also requests dropped capabilities, `no-new-privileges`,
-CPU/memory/process limits, and a bounded temporary filesystem. The image's
-default user is retained rather than claiming a universal non-root guarantee;
-the daemon and image configuration remain part of the trust boundary. Logs are
-bounded and redacted before they are stored.
+The default Docker backend allows dependency acquisition to use the network, then
+requests networking to be disabled for verification commands. If Docker is not
+available, the result is blocked rather than silently falling back to host
+execution. Host execution requires both `--backend host` and
+`--allow-host-exec`, and is not a sandbox.
 
-If Docker is unavailable, an explicit local-only demonstration can be run with:
+### Run the reproducibility experiment
 
-```bash
-uv run --locked reprocheck verify . \
-  --profile python-uv \
-  --backend host \
-  --allow-host-exec \
-  --approve \
-  --receipt host-receipt.json
-```
-
-This is not a sandbox. The receipt records that residual risk.
-
-## Independent reproducibility experiment
-
-The Python-first experiment captures one source snapshot, creates two independent
-workspaces, and runs the same approved `python-uv` plan twice. Select at least one
-workspace-relative output artifact to make the comparison meaningful:
+The included Python fixture writes a fresh value to
+`reprocheck-demo-artifact.txt` during its test. Run the plan twice and compare
+that workspace-relative path:
 
 ```bash
-uv run --locked reprocheck experiment examples/reproducibility-drift-python \
+uv run --locked reprocheck experiment \
+  examples/reproducibility-drift-python \
   --profile python-uv \
   --backend docker \
   --artifact reprocheck-demo-artifact.txt \
   --receipt experiment-receipt.json \
+  --format terminal \
   --approve
 ```
 
-The plan is printed before either run. The experiment never shares writable
-workspaces or dependency caches between runs. Acquisition is network-enabled;
-later verification commands use Docker networking disabled. The receipt records
-the common source fingerprint, plan, both run outcomes, selected artifact hashes,
-classification, environment details, and limitations.
+The command is expected to return exit code `1`: both runs should pass, but the
+selected artifact should differ. The artifact path is resolved relative to each
+materialized workspace root, not relative to this README or the host checkout.
+See the [guided drift demo](docs/reproducibility-drift-demo.md) for POSIX and
+PowerShell commands, expected output, and receipt validation.
 
-Experiment classifications are deliberately narrow:
-
-| Classification | Meaning |
-|---|---|
-| `reproducible` | Both runs pass and every selected artifact matches |
-| `drift_detected` | Both runs pass but a selected artifact differs |
-| `pass_fail_disagreement` | One run passes and the other has a test/build failure |
-| `both_failed` | Both runs reach verification and fail |
-| `infrastructure_failure` | Startup, acquisition, backend, timeout, or executor failure prevents comparison |
-| `comparison_invalid` | The source changes or the frozen comparison contract is inconsistent |
-| `incomplete` | Approval, run, artifact, or other required evidence is missing |
-
-An experiment report keeps per-run execution separate from the pair-level
-reproducibility result. For example, `drift_detected` may show `Run A: pass` and
-`Run B: pass` with `artifacts_match: false`; both verification runs passed, but
-reproducibility was not established. Experiment exit code `1` reports that
-pair-level result and does not mean both runs failed.
-
-The controlled fixture in
-[`examples/reproducibility-drift-python`](examples/reproducibility-drift-python)
-intentionally writes a fresh artifact value on each passing run. It demonstrates
-an observed artifact difference only; it is not a universal reproducibility claim.
-
-Receipt operations are local and do not upload repository contents:
+Validate the receipt locally:
 
 ```bash
-uv run --locked reprocheck receipt validate verification-receipt.json --repository .
-uv run --locked reprocheck receipt compare before.json after.json
-```
-
-Receipts use canonical JSON and SHA-256 to detect changes relative to a trusted
-copy. A hash stored alongside a receipt is not a tamper-proof attestation; see
-[`docs/receipt-format.md`](docs/receipt-format.md).
-
-The documented drift acceptance flow is:
-
-```powershell
-uv run --locked --offline reprocheck experiment examples/reproducibility-drift-python `
-  --profile python-uv --backend docker `
-  --artifact reprocheck-demo-artifact.txt `
-  --receipt "$env:TEMP\reprocheck-experiment-receipt-final.json" `
-  --format terminal --approve
-
-uv run --locked --offline reprocheck receipt validate "$env:TEMP\reprocheck-experiment-receipt-final.json" `
+uv run --locked --offline reprocheck receipt validate \
+  experiment-receipt.json \
   --repository examples/reproducibility-drift-python
 ```
 
-The fixture is expected to return exit code `1` because it demonstrates artifact
-drift. The two verification runs should each pass. Copy the receipt, change an
-integrity-relevant field, and run `receipt validate` again; the tampered copy must
-be rejected.
+For the same workflow in PowerShell, use the documented backtick continuation:
 
-## Development checks
+```powershell
+uv run --locked reprocheck experiment `
+  examples/reproducibility-drift-python `
+  --profile python-uv --backend docker `
+  --artifact reprocheck-demo-artifact.txt `
+  --receipt experiment-receipt.json `
+  --format terminal --approve
 
-The canonical offline check command is:
+uv run --locked --offline reprocheck receipt validate `
+  experiment-receipt.json `
+  --repository examples/reproducibility-drift-python
+```
+
+## Interpreting the result
+
+ReproCheck reports several deliberately different layers of evidence:
+
+| Layer | Question answered | Example values |
+|---|---|---|
+| Static finding | What does the repository expose or omit? | `looks_correct`, `static_fail`, `unsupported` |
+| Verification run | Did one approved command sequence execute successfully? | `pass`, `fail`, `blocked`, `denied`, `timeout` |
+| Experiment classification | What does the pair of runs establish? | `reproducible`, `drift_detected`, `both_failed`, `incomplete` |
+| Artifact comparison | Did every selected file or directory match? | `artifact_equal: true/false` |
+| Receipt integrity | Does the receipt still match its canonical hash? | `valid` or `invalid` |
+| CLI exit status | Should a script treat the result as acceptable? | `0` for an established pass; `1` for policy findings or negative/incomplete verification conclusions |
+
+The experiment classifications are intentionally narrow:
+
+- `reproducible` — both runs passed and every selected artifact matched.
+- `drift_detected` — both runs passed, but a selected artifact differed.
+- `pass_fail_disagreement` — one run passed and the other failed.
+- `both_failed` — both runs reached verification and failed.
+- `infrastructure_failure` — startup, acquisition, backend, or timeout evidence
+  prevented a meaningful comparison.
+- `comparison_invalid` — the source or frozen comparison contract was
+  inconsistent.
+- `incomplete` — approval, runs, artifacts, or other required evidence was
+  missing.
+
+An exit code of `1` for `drift_detected` does not mean both test runs failed. It
+means the reproducibility conclusion is negative. The terminal, JSON, Markdown,
+and receipt outputs retain the individual run outcomes.
+
+## Reports and scripting
+
+JSON is the stable machine-readable interface. Markdown is useful for a review
+artifact, while terminal output is optimized for a human at a shell:
 
 ```bash
+uv run --locked reprocheck scan /path/to/target \
+  --format json \
+  --output report.json \
+  --fail-on high
+
+uv run --locked reprocheck scan /path/to/target \
+  --format markdown \
+  --output report.md
+```
+
+Exit codes are stable: `0` means no selected policy finding and, for an
+approved experiment, an established reproducible result; `1` means a policy
+finding, verification failure, drift, disagreement, incompleteness, or blocked
+infrastructure; `2` means invalid usage or input; `3` means an unexpected
+internal error; and `130` means interruption.
+
+## Receipts and integrity
+
+Receipts are local JSON evidence files. They contain the source fingerprint,
+selected profile and backend, command outcomes, environment metadata, artifact
+manifests, limitations, and a canonical SHA-256 value. Validation does not run
+repository code:
+
+```bash
+uv run --locked --offline reprocheck receipt validate verification-receipt.json
+uv run --locked --offline reprocheck receipt compare before.json after.json
+```
+
+`valid` means the receipt can be parsed and its canonical content still matches
+the integrity metadata. It is not a signature or external provenance attestation;
+an actor who can rewrite both the receipt and its hash can create a new valid
+receipt. See [Receipt format](docs/receipt-format.md) for the versioned contract.
+
+## Supported profiles and backends
+
+The CLI exposes these verification profiles:
+
+| Profile | Requirements | Commands planned |
+|---|---|---|
+| `python-uv` | `pyproject.toml` and `uv.lock` | `uv sync --locked`, then `uv run python -m pytest` when tests are present |
+| `python-pip-editable` | Python project metadata; explicit opt-in | `python -m pip install -e .`, then `python -m pytest` when tests are present |
+| `node-npm` | `package.json` and `package-lock.json` | `npm ci`, then declared `npm test`/`npm run build` scripts |
+
+Aliases accepted by the CLI are `python`, `python-pip`, and `node`. ReproCheck
+does not silently turn pnpm, Yarn, an unfamiliar lockfile, or another ecosystem
+into an npm or Python verification.
+
+Backends:
+
+- **Docker** is the default and the required backend for the documented isolated
+  experiment. The image, daemon, host kernel, resource controls, and image user
+  remain part of the trust boundary.
+- **Host** is an explicit local-only fallback. It requires
+  `--backend host --allow-host-exec` and should only be used when its residual
+  risk is acceptable.
+
+Acquisition is marked network-enabled because dependency installation may contact
+registries. Verification commands are requested with networking disabled by the
+Docker backend. This is bounded isolation, not a claim of complete hermeticity.
+
+## Security safeguards and limitations
+
+The execution path uses argument-array subprocesses, `shell=False`, explicit
+approval, temporary workspaces, path containment checks, symlink rejection,
+bounded and redacted output, an environment allowlist, timeouts, process-group
+cleanup, and best-effort Unix resource limits. Static scanning never executes a
+README command, package script, CI step, Dockerfile, or dependency installer.
+
+Important limits:
+
+- A passing test does not prove the test is correct or that every output was
+  selected for comparison.
+- Results are scoped to one source snapshot, profile, backend, environment, and
+  artifact selection.
+- Docker is not a complete security sandbox; package installation can execute
+  hooks and the daemon/host kernel remain trusted infrastructure.
+- Static checks are conservative heuristics and do not resolve dependency graphs
+  or prove security.
+- The experiment is currently a Python-first two-run workflow. Other supported
+  profiles can be verified where their plan requirements are met.
+
+Read the [security model](docs/security-model.md) and
+[supported-platforms notes](docs/supported-platforms.md) before treating a
+receipt as a release or deployment attestation.
+
+## Troubleshooting
+
+| Situation | Meaning and next step |
+|---|---|
+| `uv` is not found | Install uv from its official documentation, then run `uv python install 3.12` and `uv sync --locked --dev`. |
+| Python version is outside 3.12 | Use uv-managed Python 3.12; the project intentionally requires `<3.13`. |
+| Docker is unavailable | `scan` still works. Docker-backed `verify`/`experiment` report blocked infrastructure; do not assume host execution. |
+| The preview says `verification: denied` | This is the safe no-execution path. Review the printed argv plan and rerun with `--approve`. |
+| A profile is rejected | Run `reprocheck verify --help` and choose `python-uv`, `python-pip-editable`, or `node-npm`; check the target's required manifest and lockfile. |
+| An artifact is missing | Ensure the selected path is written by the verification commands and is relative to the target workspace root. The drift fixture writes its artifact during `pytest`. |
+| Receipt validation is `invalid` | The file is malformed, tampered with, unsupported, or no longer matches its canonical integrity hash. Keep the original receipt and regenerate evidence if needed. |
+| Result is `drift_detected` | Both verification runs may have passed. Inspect the per-run outcomes and selected artifact manifests; the artifact bytes differ. |
+
+## Development
+
+Install the locked development environment, then run the complete quality gate:
+
+```bash
+uv sync --locked --dev
 make test
 ```
 
-Run `uv sync --locked --dev` once before this command to populate the project
-environment. Dependency acquisition is the setup step; `make test` itself is
-explicitly offline and runs Ruff, mypy, formatting validation, and the complete
-pytest suite without using a host-global environment. On systems without GNU
-Make, the complete test suite can be run directly with the pinned Python
-runtime and no third-party runner or network access:
+`make test` runs Ruff, Linux-targeted-compatible mypy configuration, format
+validation, and the full pytest suite with locked/offline uv execution. On a
+machine without GNU Make, the test suite itself can be run without a third-party
+runner:
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-This direct command is the judge-style offline test command; all repository
-tests use the standard-library `unittest` API. The `make test` target remains
-the broader offline quality gate when the locked development tools are present.
-
-Other useful commands are:
+Other useful checks:
 
 ```bash
-uv run --locked --offline python -m pytest tests/unit/test_verification.py
+uv run --locked --offline ruff check src tests
+uv run --locked --offline ruff format --check src tests
+uv run --locked --offline mypy --platform linux src
 uv build
 ```
 
-The static scan itself is read-only. Tests use inert temporary fixtures and
-mocked or explicitly approved disposable subprocesses; they do not run
-destructive payloads on the developer's host.
+The CI workflow runs the locked checks, a self-scan, a Docker image build, and
+the image entry-point smoke test. Contributions should preserve the approval
+boundary and add a focused regression test for changed security or evidence
+semantics.
 
-## Architecture
+### Contributing
 
-```text
-src/reprocheck/
-├── cli.py                 # scan, verify, receipt commands and exit policy
-├── discovery.py           # safe filesystem discovery and ecosystem markers
-├── fingerprint.py         # deterministic filesystem-v1 content hash
-├── command_parser.py      # conservative non-executing command classification
-├── models.py              # typed, versioned domain contracts
-├── checks/                # deterministic static check registry and checks
-├── scoring.py             # applicability-aware static and verified summaries
-├── reporting/             # terminal, JSON, and Markdown renderers
-├── verification/          # approval, snapshots, experiments, artifacts, and subprocesses
-└── receipts/              # canonical receipt build, validation, comparison
-```
+Keep changes focused on evidence quality, portable execution, and honest user
+communication. Before opening a change, run the documented quality checks,
+update the relevant receipt or platform documentation, and add a regression
+test when behavior or a security boundary changes. Do not include receipts,
+generated build output, local environments, credentials, or machine-specific
+paths in a commit.
 
-Checks are registered through a stable plugin interface and return findings with
-IDs such as `RC-DEP-002`. The scanner never invokes a package script, CI step,
-Dockerfile, README command, or dependency installer. Verification profiles are
-separate from static checks and emit `VERIFIED_PASS`, `VERIFIED_FAIL`, or
-`NOT_VERIFIED` outcomes.
+## Documentation map
 
-## Security model and limitations
-
-ReproCheck uses argument-array subprocesses, `shell=False`, explicit approval,
-temporary workspaces, path containment checks, symlink rejection, bounded logs,
-secret redaction, an environment allowlist, timeouts, process-group cleanup, and
-best-effort Unix resource limits. Docker execution drops no claim that the
-container is a complete sandbox: the Docker daemon and host kernel remain in the
-trust boundary, and dependency installation can execute package hooks.
-
-The static secret and path checks are conservative heuristics, not proof of
-security. README/YAML/shell parsing is intentionally incomplete. ReproCheck
-cannot prove that a passing test suite is correct, that all platforms will
-behave identically, or that a receipt has an external provenance attestation.
-There is no automatic upload, automatic file modification, AI API, hosted model,
-or required cloud account.
-
-See:
-
-- [`docs/checks.md`](docs/checks.md) — check scope and limitations.
-- [`docs/receipt-format.md`](docs/receipt-format.md) — receipt fields and integrity.
-- [`docs/security-model.md`](docs/security-model.md) — execution risks and controls.
-- [`docs/supported-platforms.md`](docs/supported-platforms.md) — support boundaries.
-- [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md) — honest future evaluation.
-
-## Dogfooding and contribution
-
-The CI workflow runs the locked test suite and a ReproCheck self-scan. Genuine
-self-scan findings are fixed or documented; they are not suppressed merely to
-make the repository appear clean. Contributions should add a fixture and a
-regression test for every new check or security behavior.
+- [Guided reproducibility-drift demo](docs/reproducibility-drift-demo.md)
+- [Architecture and trust boundaries](docs/architecture.md)
+- [Supported platforms and profiles](docs/supported-platforms.md)
+- [Receipt format](docs/receipt-format.md)
+- [Security model](docs/security-model.md)
+- [Static checks](docs/checks.md)
+- [Benchmark methodology](docs/benchmark-methodology.md)
 
 ## License
 
-ReproCheck is distributed under the license in [`LICENSE`](LICENSE).
+ReproCheck is distributed under the [MIT License](LICENSE).

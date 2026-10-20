@@ -392,7 +392,8 @@ class WorkspaceAndExecutorTests(unittest.TestCase):
                 startup_failure_py = root / "docker-stub-startup-failure.py"
                 startup_failure_py.write_text(
                     "import sys\n"
-                    "sys.stderr.write('exec: \\\"uv\\\": executable file not found in $PATH\\n')\n"
+                    "sys.stderr.write(\"The command 'docker' could not be found in this WSL 2 "
+                    'distro.\\n")\n'
                     "raise SystemExit(126)\n",
                     encoding="utf-8",
                 )
@@ -404,7 +405,8 @@ class WorkspaceAndExecutorTests(unittest.TestCase):
                 startup_failure.write_text(
                     f"#!{sys.executable}\n"
                     "import sys\n"
-                    "sys.stderr.write('exec: \\\"uv\\\": executable file not found in $PATH\\n')\n"
+                    "sys.stderr.write(\"The command 'docker' could not be found in this WSL 2 "
+                    'distro.\\n")\n'
                     "raise SystemExit(126)\n",
                     encoding="utf-8",
                 )

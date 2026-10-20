@@ -62,7 +62,9 @@ _SECRET_ENV_RE = __import__("re").compile(
 _DOCKER_STARTUP_ERROR_RE = re.compile(
     r"(?:exec: .*executable file not found in \$PATH|"
     r"OCI runtime .* failed|docker: (?:error|cannot)|Error response from daemon|"
-    r"Cannot connect to the Docker daemon)",
+    r"Cannot connect to the Docker daemon|"
+    r"The command ['\"]?docker(?:\.exe)?['\"]? could not be found|"
+    r"docker(?:\.exe)?: command not found)",
     re.IGNORECASE,
 )
 _CONTAINER_HOST_ENV_NAMES = frozenset(

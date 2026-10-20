@@ -41,6 +41,7 @@ from .verification import (
     ExperimentStatus,
     ProfileError,
     VerificationPlan,
+    available_profiles,
     execute_plan,
     plan_verification,
     run_experiment,
@@ -49,6 +50,12 @@ from .welcome import render_welcome
 
 VERSION: Final[str] = "0.1.0"
 DEFAULT_FAIL_ON: Final[Severity] = Severity.HIGH
+PROFILE_CHOICES: Final[tuple[str, ...]] = (
+    *available_profiles(),
+    "python",
+    "python-pip",
+    "node",
+)
 
 _SEVERITY_ORDER: Final[dict[Severity, int]] = {
     Severity.INFO: 0,
@@ -122,7 +129,15 @@ def _argument_parser() -> argparse.ArgumentParser:
         "verify", help="plan and optionally execute approved clean-room commands"
     )
     verify.add_argument("path", metavar="PATH", help="repository directory to verify")
-    verify.add_argument("--profile", help="verification profile, such as python-uv or node-npm")
+    verify.add_argument(
+        "--profile",
+        choices=PROFILE_CHOICES,
+        metavar="PROFILE",
+        help=(
+            "verification profile: python-uv, python-pip-editable, or node-npm "
+            "(aliases: python, python-pip, node)"
+        ),
+    )
     verify.add_argument(
         "--backend",
         choices=("docker", "host"),
@@ -157,7 +172,15 @@ def _argument_parser() -> argparse.ArgumentParser:
         "experiment", help="run the approved verification profile twice and compare evidence"
     )
     experiment.add_argument("path", metavar="PATH", help="repository directory to experiment")
-    experiment.add_argument("--profile", help="verification profile, such as python-uv")
+    experiment.add_argument(
+        "--profile",
+        choices=PROFILE_CHOICES,
+        metavar="PROFILE",
+        help=(
+            "verification profile: python-uv, python-pip-editable, or node-npm "
+            "(aliases: python, python-pip, node)"
+        ),
+    )
     experiment.add_argument(
         "--backend",
         choices=("docker", "host"),
@@ -310,11 +333,14 @@ def _write_or_print(rendered: str, output: str | None) -> None:
     Path(output).write_text(rendered, encoding="utf-8", newline="\n")
 
 
-def _show_plan(plan: VerificationPlan) -> None:
+def _show_plan(plan: VerificationPlan, *, approved: bool) -> None:
     """Display every proposed command before an execution decision."""
 
     print("REPROCHECK VERIFICATION PLAN", file=sys.stderr)
-    print("approval: required; no commands run without --approve", file=sys.stderr)
+    if approved:
+        print("approval: granted; executing only the displayed plan", file=sys.stderr)
+    else:
+        print("approval: required; no commands run without --approve", file=sys.stderr)
     for item in plan.commands:
         argv = " ".join(item.argv)
         print(
@@ -325,14 +351,21 @@ def _show_plan(plan: VerificationPlan) -> None:
         print("- no commands were planned", file=sys.stderr)
     for limitation in plan.limitations:
         print(f"limitation: {limitation}", file=sys.stderr)
+    if not approved:
+        print("next: review this plan, then rerun with --approve to execute it", file=sys.stderr)
 
 
-def _show_experiment_plan(plan: VerificationPlan, artifact_paths: tuple[str, ...]) -> None:
+def _show_experiment_plan(
+    plan: VerificationPlan, artifact_paths: tuple[str, ...], *, approved: bool
+) -> None:
     """Display the shared plan and two-run experiment policy before approval."""
 
     print("REPROCHECK EXPERIMENT PLAN", file=sys.stderr)
-    print("runs: 2 independent workspaces; approval: required", file=sys.stderr)
-    _show_plan(plan)
+    print(
+        "runs: 2 independent workspaces; approval: " + ("granted" if approved else "required"),
+        file=sys.stderr,
+    )
+    _show_plan(plan, approved=approved)
     if artifact_paths:
         for path in artifact_paths:
             print(f"- artifact={path}", file=sys.stderr)
@@ -385,7 +418,7 @@ def verify_repository(
 
     static_report = scan_repository(repository)
     plan = plan_verification(repository, profile=profile)
-    _show_plan(plan)
+    _show_plan(plan, approved=approved)
     result = execute_plan(
         plan,
         approved=approved,
@@ -451,7 +484,7 @@ def experiment_repository(
 
     static_report = scan_repository(repository)
     preview_plan = plan_verification(repository, profile=profile)
-    _show_experiment_plan(preview_plan, artifact_paths)
+    _show_experiment_plan(preview_plan, artifact_paths, approved=approved)
     experiment = run_experiment(
         repository,
         profile=profile,

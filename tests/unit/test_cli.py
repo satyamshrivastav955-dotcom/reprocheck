@@ -60,6 +60,12 @@ class CliTests(unittest.TestCase):
                 main(arguments)
             self.assertNotIn("GET STARTED", output.getvalue())
 
+        verify_help = io.StringIO()
+        with redirect_stdout(verify_help), redirect_stderr(io.StringIO()):
+            main(["verify", "--help"])
+        self.assertIn("python-pip-editable", verify_help.getvalue())
+        self.assertIn("node-npm", verify_help.getvalue())
+
         version = io.StringIO()
         with redirect_stdout(version):
             main(["--version"])
@@ -223,6 +229,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["verification_runs"], [])
             self.assertNotIn("GET STARTED", output.getvalue())
             self.assertIn("runs: 2 independent workspaces", errors.getvalue())
+            self.assertIn("next: review this plan", errors.getvalue())
 
     def test_experiment_rejects_invalid_artifact_before_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -68,9 +68,9 @@ class WelcomeTests(unittest.TestCase):
 
         self.assertNotIn("\x1b[", render_welcome("0.1.0", color=False, width=120))
 
-    def test_footer_docs_link_is_reserved_for_roomy_layouts(self) -> None:
-        self.assertIn("docs.reprocheck.dev", render_welcome("0.1.0", color=False, width=100))
-        self.assertNotIn("docs.reprocheck.dev", render_welcome("0.1.0", color=False, width=40))
+    def test_footer_local_docs_hint_is_reserved_for_roomy_layouts(self) -> None:
+        self.assertIn("README.md + docs/", render_welcome("0.1.0", color=False, width=100))
+        self.assertNotIn("README.md + docs/", render_welcome("0.1.0", color=False, width=40))
 
 
 if __name__ == "__main__":
