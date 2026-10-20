@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import signal
 import subprocess
@@ -58,6 +59,15 @@ DEFAULT_ENV_ALLOWLIST = frozenset(
 _SECRET_ENV_RE = __import__("re").compile(
     r"(?i)(?:token|secret|password|passwd|api[_-]?key|private[_-]?key|credential)"
 )
+_DOCKER_STARTUP_ERROR_RE = re.compile(
+    r"(?:exec: .*executable file not found in \$PATH|"
+    r"OCI runtime .* failed|docker: (?:error|cannot)|Error response from daemon|"
+    r"Cannot connect to the Docker daemon)",
+    re.IGNORECASE,
+)
+_CONTAINER_HOST_ENV_NAMES = frozenset(
+    {"PATH", "PATHEXT", "HOME", "USER", "USERNAME", "TEMP", "TMP", "TMPDIR", "SYSTEMROOT"}
+)
 
 
 def docker_image_for_profile(profile: str) -> str:
@@ -84,6 +94,20 @@ ExecutionStatus = VerificationStatus
 
 def _is_allowed_name(name: str, allowlist: frozenset[str]) -> bool:
     return name in allowlist and not _SECRET_ENV_RE.search(name)
+
+
+def _container_environment(environment: Mapping[str, str]) -> dict[str, str]:
+    """Keep host platform variables out of Docker ``--env`` arguments."""
+
+    return {
+        name: value for name, value in environment.items() if name not in _CONTAINER_HOST_ENV_NAMES
+    }
+
+
+def _is_docker_startup_error(stderr: str) -> bool:
+    """Return whether Docker failed before the requested process could start."""
+
+    return _DOCKER_STARTUP_ERROR_RE.search(stderr) is not None
 
 
 def sanitize_environment(
@@ -448,7 +472,12 @@ class SubprocessExecutor:
         if approved is not None and not isinstance(approved, bool):
             raise TypeError("approved must be an explicit boolean")
         safe_environment = sanitize_environment(allowlist=self.environment_allowlist)
-        environment = _environment_fingerprint(safe_environment, self.backend)
+        environment = _environment_fingerprint(
+            _container_environment(safe_environment)
+            if self.backend == "docker"
+            else safe_environment,
+            self.backend,
+        )
         if approved is not True:
             return self._control_result(
                 plan,
@@ -487,6 +516,10 @@ class SubprocessExecutor:
             limitations.add(
                 "Docker execution is backend-isolated, but sandbox completeness is not claimed."
             )
+            limitations.add(
+                "Host platform environment variables, including PATH, were not forwarded into "
+                "the container; image defaults are used."
+            )
         _, resource_limitations = _resource_preexec(
             cpu_seconds=self.cpu_seconds,
             address_space_bytes=self.address_space_bytes,
@@ -504,11 +537,16 @@ class SubprocessExecutor:
                     command = planned.command
                     command_environment, env_limitations = self._environment(command)
                     limitations.update(env_limitations)
+                    container_environment = (
+                        _container_environment(command_environment)
+                        if self.backend == "docker"
+                        else command_environment
+                    )
                     safe_command = CommandSpec(
                         executable=command.executable,
                         args=command.args,
                         cwd=command.cwd,
-                        env=command_environment,
+                        env=container_environment,
                         timeout_seconds=command.timeout_seconds,
                         description=command.description,
                     )
@@ -520,7 +558,7 @@ class SubprocessExecutor:
                             argv = self._docker_argv(
                                 planned,
                                 workspace=workspace,
-                                environment=command_environment,
+                                environment=container_environment,
                                 image=image,
                             )
                             cwd = workspace
@@ -544,6 +582,11 @@ class SubprocessExecutor:
                             command_status = VerificationStatus.TIMEOUT
                             result_state = ResultState.NOT_VERIFIED
                         elif process_outcome.error is not None:
+                            command_status = VerificationStatus.INFRA_ERROR
+                            result_state = ResultState.NOT_VERIFIED
+                        elif self.backend == "docker" and _is_docker_startup_error(
+                            process_outcome.stderr
+                        ):
                             command_status = VerificationStatus.INFRA_ERROR
                             result_state = ResultState.NOT_VERIFIED
                         elif process_outcome.exit_code == 0:

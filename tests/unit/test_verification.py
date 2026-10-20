@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from reprocheck.models import CommandSpec, Ecosystem
+from reprocheck.models import CommandSpec, Ecosystem, ResultState
 from reprocheck.verification import (
     NODE_DOCKER_IMAGE,
     PYTHON_DOCKER_IMAGE,
@@ -321,6 +321,78 @@ class WorkspaceAndExecutorTests(unittest.TestCase):
             self.assertIn("--pids-limit", argv)
             self.assertIn("--tmpfs", argv)
             self.assertNotEqual(PYTHON_DOCKER_IMAGE, NODE_DOCKER_IMAGE)
+
+    def test_docker_does_not_forward_windows_path_or_misclassify_startup_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = VerificationPlan(
+                repository=root,
+                profile="python-uv",
+                ecosystem=Ecosystem.PYTHON,
+                commands=(
+                    PlannedCommand(
+                        command=CommandSpec(executable="uv", args=("sync", "--locked"), cwd="."),
+                        phase=PlanPhase.ACQUISITION,
+                        network_required=True,
+                        purpose="Synchronize the locked Python environment",
+                    ),
+                ),
+                acquisition=AcquisitionPolicy(network_required=True),
+            )
+            launcher = root / "docker-stub-launcher"
+            launcher.write_text(
+                f"#!{sys.executable}\n"
+                "import sys\n"
+                "args = sys.argv[1:]\n"
+                "for index, value in enumerate(args[:-1]):\n"
+                "    if value == '--env' and args[index + 1].startswith('PATH='):\n"
+                "        raise SystemExit(97)\n"
+                "if 'uv' not in args:\n"
+                "    raise SystemExit(98)\n"
+                "print('uv launched')\n",
+                encoding="utf-8",
+            )
+            launcher.chmod(0o755)
+            windows_path = r"C:\Windows\system32;C:\repo\.venv-win\Scripts"
+            with patch.dict(os.environ, {"PATH": windows_path}, clear=False):
+                result = execute_plan(
+                    plan,
+                    approved=True,
+                    backend="docker",
+                    docker_executable=str(launcher),
+                )
+
+            self.assertEqual(result.status, ExecutionStatus.PASS)
+            self.assertEqual(result.run.state, ResultState.VERIFIED_PASS)
+            self.assertIn("uv launched", result.commands[0].stdout)
+            self.assertNotIn("PATH", result.commands[0].command.env)
+            self.assertNotIn(windows_path, result.commands[0].command.to_json())
+
+            startup_failure = root / "docker-stub-startup-failure"
+            startup_failure.write_text(
+                f"#!{sys.executable}\n"
+                "import sys\n"
+                "sys.stderr.write('exec: \\\"uv\\\": executable file not found in $PATH\\n')\n"
+                "raise SystemExit(126)\n",
+                encoding="utf-8",
+            )
+            startup_failure.chmod(0o755)
+            with patch.dict(os.environ, {"PATH": windows_path}, clear=False):
+                infrastructure_error = execute_plan(
+                    plan,
+                    approved=True,
+                    backend="docker",
+                    docker_executable=str(startup_failure),
+                )
+
+            self.assertEqual(infrastructure_error.status, ExecutionStatus.INFRA_ERROR)
+            self.assertEqual(infrastructure_error.run.state, ResultState.NOT_VERIFIED)
+            self.assertEqual(
+                infrastructure_error.commands[0].result_state, ResultState.NOT_VERIFIED
+            )
+            self.assertNotEqual(
+                infrastructure_error.commands[0].result_state, ResultState.VERIFIED_FAIL
+            )
 
 
 if __name__ == "__main__":
