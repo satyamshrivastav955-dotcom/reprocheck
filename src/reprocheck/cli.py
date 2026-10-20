@@ -3,7 +3,7 @@
 Exit codes are stable API:
 
 * ``0`` — no policy finding meets ``--fail-on``;
-* ``1`` — at least one policy finding meets ``--fail-on``;
+* ``1`` — a policy finding meets ``--fail-on`` or verification does not pass;
 * ``2`` — usage or input/path error;
 * ``3`` — unexpected internal error;
 * ``130`` — interrupted by the user.
@@ -381,6 +381,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = scan_repository(Path(arguments.path))
         rendered = _render(report, arguments.format)
         _write_or_print(rendered, arguments.output)
+        if arguments.command == "verify" and report.summary.get("verification_status") != "pass":
+            return 1
         fail_on = Severity(arguments.fail_on)
         return 1 if policy_findings(report, fail_on) else 0
     except KeyboardInterrupt:

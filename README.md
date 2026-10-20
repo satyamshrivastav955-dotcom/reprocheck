@@ -100,7 +100,7 @@ Exit codes are stable:
 | Code | Meaning |
 |---:|---|
 | 0 | No finding at or above `--fail-on` |
-| 1 | A policy finding meets `--fail-on` |
+| 1 | A policy finding meets `--fail-on`, or an approved verification does not pass |
 | 2 | Invalid usage, path, or input |
 | 3 | Unexpected internal error |
 | 130 | Interrupted by the user |

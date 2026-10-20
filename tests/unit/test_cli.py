@@ -102,7 +102,7 @@ class CliTests(unittest.TestCase):
                         "critical",
                     ]
                 )
-            self.assertEqual(exit_code, 0)
+            self.assertEqual(exit_code, 1)
             payload = json.loads(output.getvalue())
             self.assertEqual(payload["summary"]["verification_status"], "denied")
             self.assertEqual(payload["verification_runs"][0]["state"], "not_verified")
