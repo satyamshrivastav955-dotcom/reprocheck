@@ -4,12 +4,58 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from reprocheck.cli import main, scan_repository
 from reprocheck.reporting import render_json
 
 
 class CliTests(unittest.TestCase):
+    def test_bare_invocation_shows_branded_welcome(self) -> None:
+        output = io.StringIO()
+        errors = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(errors):
+            exit_code = main([])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("ReproCheck", output.getvalue())
+        self.assertIn("GET STARTED", output.getvalue())
+        self.assertIn("reprocheck scan .", output.getvalue())
+        self.assertIn("reprocheck verify . --profile python-uv --backend docker", output.getvalue())
+        self.assertIn("reprocheck receipt --help", output.getvalue())
+        self.assertEqual(errors.getvalue(), "")
+        self.assertNotIn("usage:", output.getvalue().lower())
+
+    def test_help_and_version_do_not_include_welcome(self) -> None:
+        for arguments in (
+            ["--help"],
+            ["scan", "--help"],
+            ["verify", "--help"],
+            ["receipt", "--help"],
+        ):
+            output = io.StringIO()
+            with redirect_stdout(output), redirect_stderr(io.StringIO()):
+                main(arguments)
+            self.assertNotIn("GET STARTED", output.getvalue())
+
+        version = io.StringIO()
+        with redirect_stdout(version):
+            main(["--version"])
+        self.assertEqual(version.getvalue(), "reprocheck 0.1.0\n")
+        self.assertNotIn("GET STARTED", version.getvalue())
+
+    def test_no_color_disables_welcome_ansi_for_a_tty(self) -> None:
+        class TTYBuffer(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        output = TTYBuffer()
+        with patch.dict("os.environ", {"NO_COLOR": "1"}), redirect_stdout(output):
+            exit_code = main([])
+
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("\x1b[", output.getvalue())
+
     def test_scan_builds_static_report_and_threshold_exit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -27,6 +73,7 @@ class CliTests(unittest.TestCase):
             self.assertIn("score_summary", payload["summary"])
             self.assertIsNone(payload["summary"]["score_summary"]["verified_score"])
             self.assertNotIn("verified_pass", output.getvalue())
+            self.assertNotIn("GET STARTED", output.getvalue())
 
             medium_output = io.StringIO()
             with redirect_stdout(medium_output):
@@ -106,6 +153,11 @@ class CliTests(unittest.TestCase):
             payload = json.loads(output.getvalue())
             self.assertEqual(payload["summary"]["verification_status"], "denied")
             self.assertEqual(payload["verification_runs"][0]["state"], "not_verified")
+            self.assertEqual(payload["summary"]["score_summary"]["verified_score"], 0.0)
+            self.assertEqual(
+                payload["summary"]["score_summary"]["verified_denominator"],
+                payload["summary"]["score_summary"]["denominator"],
+            )
             self.assertTrue(receipt_path.exists())
             self.assertIn("approval: required", plan_output.getvalue())
             self.assertIn("uv sync --locked", plan_output.getvalue())

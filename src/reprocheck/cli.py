@@ -37,6 +37,7 @@ from .receipts import (
 from .reporting import render_json, render_markdown, render_terminal, sorted_findings
 from .scoring import ScoreSummary, score_report
 from .verification import ProfileError, VerificationPlan, execute_plan, plan_verification
+from .welcome import render_welcome
 
 VERSION: Final[str] = "0.1.0"
 DEFAULT_FAIL_ON: Final[Severity] = Severity.HIGH
@@ -307,13 +308,17 @@ def verify_repository(
             "receipt_id": receipt.receipt_id,
         }
     )
-    return replace(
+    final_report = replace(
         static_report,
         state=state,
         assessment=assessment,
         verification_runs=(result.run,),
         evidence_receipt=receipt,
         summary=summary,
+    )
+    return replace(
+        final_report,
+        summary={**final_report.summary, "score_summary": score_report(final_report).to_dict()},
     )
 
 
@@ -359,6 +364,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_usage(sys.stderr)
         print(f"reprocheck: error: {error}", file=sys.stderr)
         return 2
+
+    if arguments.command is None:
+        sys.stdout.write(render_welcome(VERSION, stream=sys.stdout))
+        return 0
 
     if arguments.command == "receipt":
         return _receipt_command(arguments)

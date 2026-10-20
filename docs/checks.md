@@ -33,3 +33,8 @@ not prove that a command will succeed.
 Every finding includes a stable ID, severity, state, assessment, evidence,
 remediation when actionable, and the check's false-positive policy. Findings are
 ordered deterministically and use relative repository paths in evidence.
+
+The static readiness score and verified execution score are independent. A
+successful executed command does not promote unrelated static findings to
+`VERIFIED_PASS`; `verified_score: 0/<applicable weight>` means the run exists but
+no individual scoring-group findings were verified by that run.

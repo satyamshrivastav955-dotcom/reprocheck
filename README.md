@@ -51,6 +51,17 @@ uv sync --locked --dev
 uv run reprocheck scan .
 ```
 
+With no subcommand, ReproCheck opens with a compact terminal welcome showing the
+real first steps:
+
+```bash
+reprocheck
+```
+
+The welcome is plain text when stdout is redirected or `NO_COLOR` is set. It is
+never added to JSON, Markdown, receipt output, or detailed `--help` output, so
+those interfaces remain safe for CI and scripts.
+
 The intended registry installation shape is:
 
 ```bash
@@ -109,6 +120,12 @@ JSON is the CI interface. Findings are ordered by stable ID, path, and
 fingerprint. A score is a coverage-aware static readiness summary, not proof of
 successful execution. Presence of a manifest, lockfile, or Dockerfile is never
 reported as a verified pass.
+
+The `verified_score` is intentionally separate: it scores only findings with
+`VERIFIED_PASS` or `VERIFIED_FAIL` evidence. A successful verification run does
+not automatically verify every static scoring group, so a report can honestly
+show `verified_score: 0/<applicable weight>` when the executed commands have not
+been mapped to individual static findings.
 
 ## Clean-room verification
 
