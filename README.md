@@ -36,6 +36,7 @@ runner.
 
 - Python 3.12 (pinned in `.python-version`).
 - [uv](https://docs.astral.sh/uv/) 0.13 or a compatible current uv release.
+- Linux, Windows (10/11), and macOS environments supported.
 - Docker Engine is optional for static scans and required for the default isolated
   verification backend. Docker is not a complete security sandbox.
 
