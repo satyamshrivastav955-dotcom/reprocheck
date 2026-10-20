@@ -211,7 +211,7 @@ it is reproducible. `artifacts_match` in the terminal report corresponds to
 - **`verified_score`** is separate execution evidence. Recognized test/build
   outcomes linked to `RC-CMD-001` can earn the **commands** group's 15 points;
   acquisition alone earns none. Failed, denied, missing or unlinked execution
-  evidence earns no positive credit. Without a verification phase it is unavailable.
+  evidence earns no positive credit. On a static-only scan it is unavailable.
 
 The verified denominator retains all statically applicable groups; unverified
 groups remain zero and appear in limitations. Passing tests do not verify CI,
@@ -268,7 +268,7 @@ uv run --project C:\src\reprocheck --locked reprocheck scan C:\src\target
 
 **Exit policy:** `0` means an acceptable result under the command's policy;
 `1` means a policy finding, failed/blocked/incomplete verification, negative
-experiment conclusion, invalid receipt validation or changed receipt comparison.
+experiment conclusion, failed receipt integrity validation or changed receipt comparison.
 `2` means invalid usage/input; `3` an unexpected internal error; `130` interruption.
 An experiment can exit `0` only when reproducibility is established **and** the
 selected static-finding threshold is satisfied. The default `--fail-on` is `high`.
@@ -427,9 +427,9 @@ uv run --locked --offline ruff format --check src tests
 uv run --locked --offline python -m pytest
 ```
 
-POSIX standard-library discovery is also available via
-`PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py'`; it is not a
-replacement for the full quality gate.
+Standard-library discovery is also available via
+`uv run --locked --offline python -m unittest discover -s tests -p 'test_*.py'`;
+it uses the project's Python environment but does not replace the full quality gate.
 
 ### Build and run the runtime image
 

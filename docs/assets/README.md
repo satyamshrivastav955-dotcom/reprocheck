@@ -1,8 +1,8 @@
 # ReproCheck presentation assets
 
-Repository-local visuals for the README. **The root README is intentionally
-untouched by this task:** a concurrent editor owns it, and the user restricted
-this session to assets. The snippets below are ready for that editor to embed.
+Repository-local visuals embedded in the [root README](../../README.md).
+These notes preserve capture provenance, verified conditions and reproduction
+instructions. The snippets below are references for future presentation updates.
 
 ## 1. Real CLI welcome
 
@@ -170,5 +170,5 @@ See the [guided Docker demo](../reproducibility-drift-demo.md) for both shells.
   command accents were retained rather than recolored to match the diagrams.
 - `make test` passed with **212 tests**, plus Ruff, formatting and strict mypy.
   This is a local check of the current working tree, not a CI-status claim.
-- Root README integration and complete GitHub page layout remain deferred to
-  its owner. All paths in the root-README snippets are repository-relative.
+- The root README embeds the PNG alternatives for reliable typography. SVG
+  sources remain available here; all embedding paths are repository-relative.
