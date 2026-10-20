@@ -67,6 +67,17 @@ phase=verification network=false argv=python -m pytest
 ```
 
 All acquisition remains network-required. Verification networking remains
-disabled by the Docker backend; host mode neither isolates the process nor
-enforces network isolation. Installing unpinned requirements can work, but it
-does not establish locked dependency resolution or universal reproducibility.
+disabled by the Docker backend. Each Docker phase starts a fresh container, so
+editable pip uses a trusted workspace-local Python user base (`PIP_USER=1`,
+`PYTHONUSERBASE=/workspace/.reprocheck-python`) for installed packages and editable
+metadata. Its `bin` directory is first in a profile-controlled Linux `PATH`, so
+installed console scripts are also available in verification. These controls
+appear in the recorded command environment and environment fingerprint; host
+paths and arbitrary installer environment overrides are not forwarded. This
+depends on the image supporting Python user-site packages and does not promise
+compatibility with arbitrary custom images.
+
+Host mode neither isolates the process nor enforces network isolation, and the
+Docker-specific user-base controls are not applied to it. Installing unpinned
+requirements can work, but it does not establish locked dependency resolution or
+universal reproducibility.

@@ -536,6 +536,11 @@ def _python_plan(
         limitations.append(
             "The editable pip profile was explicitly selected; it is not an implicit fallback."
         )
+        limitations.append(
+            "On Docker, pip installs into a workspace-local Python user base shared across "
+            "phase containers; verification uses that user site and its console-script PATH. "
+            "The image must support Python user-site packages."
+        )
 
     commands = [install]
     if include_tests and has_tests:
